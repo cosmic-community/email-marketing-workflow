@@ -2,259 +2,400 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { EmailContact } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { UserPlus, Search, Loader2, Users, Mail } from 'lucide-react'
+import { Loader2, Users, Search, UserPlus } from 'lucide-react'
+import { EmailContact, EmailList } from '@/types'
 
 interface ContactEnrollmentModalProps {
-  isOpen: boolean
-  onClose: () => void
   workflowId: string
   workflowName: string
+  isOpen: boolean
+  onClose: () => void
 }
 
-export function ContactEnrollmentModal({ 
-  isOpen, 
-  onClose, 
-  workflowId, 
-  workflowName 
+export function ContactEnrollmentModal({
+  workflowId,
+  workflowName,
+  isOpen,
+  onClose
 }: ContactEnrollmentModalProps) {
   const router = useRouter()
-  const [contacts, setContacts] = useState<EmailContact[]>([])
-  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [enrolling, setEnrolling] = useState(false)
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([])
+  const [contacts, setContacts] = useState<EmailContact[]>([])
+  const [lists, setLists] = useState<EmailList[]>([])
+  const [selectedLists, setSelectedLists] = useState<string[]>([])
+  const [loadingData, setLoadingData] = useState(true)
 
   useEffect(() => {
     if (isOpen) {
-      fetchContacts()
+      fetchData()
     }
   }, [isOpen])
 
-  const fetchContacts = async () => {
+  const fetchData = async () => {
     try {
-      setLoading(true)
-      const response = await fetch('/api/contacts?limit=100&status=Active')
+      setLoadingData(true)
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch contacts')
+      const [contactsResponse, listsResponse] = await Promise.all([
+        fetch('/api/contacts?limit=100'),
+        fetch('/api/lists')
+      ])
+
+      if (contactsResponse.ok) {
+        const contactsResult = await contactsResponse.json()
+        setContacts(contactsResult.data.contacts || [])
       }
 
-      const result = await response.json()
-      setContacts(result.data.contacts || [])
-    } catch (error) {
-      console.error('Error fetching contacts:', error)
-      alert('Failed to load contacts')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleContactToggle = (contactId: string, checked: boolean) => {
-    setSelectedContactIds(prev => 
-      checked 
-        ? [...prev, contactId]
-        : prev.filter(id => id !== contactId)
-    )
-  }
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedContactIds(filteredContacts.map(c => c.id))
-    } else {
-      setSelectedContactIds([])
-    }
-  }
-
-  const handleEnroll = async () => {
-    if (selectedContactIds.length === 0) return
-
-    try {
-      setEnrolling(true)
-      
-      const response = await fetch(`/api/workflows/${workflowId}/enroll`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact_ids: selectedContactIds }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to enroll contacts')
+      if (listsResponse.ok) {
+        const listsResult = await listsResponse.json()
+        setLists(listsResult.data || [])
       }
-
-      const result = await response.json()
-      alert(result.message || 'Contacts enrolled successfully!')
-      
-      // Reset state
-      setSelectedContactIds([])
-      setSearchTerm('')
-      onClose()
-      
-      // Refresh the page
-      router.refresh()
     } catch (error) {
-      console.error('Error enrolling contacts:', error)
-      alert(error instanceof Error ? error.message : 'Failed to enroll contacts')
+      console.error('Error fetching data:', error)
     } finally {
-      setEnrolling(false)
+      setLoadingData(false)
     }
   }
 
   const filteredContacts = contacts.filter(contact => {
-    const searchLower = searchTerm.toLowerCase()
-    const firstName = contact.metadata.first_name?.toLowerCase() || ''
-    const lastName = contact.metadata.last_name?.toLowerCase() || ''
-    const email = contact.metadata.email?.toLowerCase() || ''
+    if (!searchTerm) return true
     
-    return firstName.includes(searchLower) || 
-           lastName.includes(searchLower) || 
-           email.includes(searchLower)
+    const searchLower = searchTerm.toLowerCase()
+    return (
+      contact.metadata.first_name?.toLowerCase().includes(searchLower) ||
+      contact.metadata.last_name?.toLowerCase().includes(searchLower) ||
+      contact.metadata.email?.toLowerCase().includes(searchLower)
+    )
   })
+
+  const handleContactToggle = (contactId: string) => {
+    setSelectedContacts(prev => 
+      prev.includes(contactId)
+        ? prev.filter(id => id !== contactId)
+        : [...prev, contactId]
+    )
+  }
+
+  const handleListToggle = (listId: string) => {
+    setSelectedLists(prev => 
+      prev.includes(listId)
+        ? prev.filter(id => id !== listId)
+        : [...prev, listId]
+    )
+  }
+
+  const handleEnrollContacts = async () => {
+    if (selectedContacts.length === 0) {
+      alert('Please select at least one contact to enroll')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+
+      // Enroll each selected contact
+      const enrollmentPromises = selectedContacts.map(contactId =>
+        fetch(`/api/workflows/${workflowId}/enroll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact_id: contactId }),
+        })
+      )
+
+      const results = await Promise.allSettled(enrollmentPromises)
+      
+      const successCount = results.filter(result => result.status === 'fulfilled').length
+      const errorCount = results.filter(result => result.status === 'rejected').length
+
+      if (successCount > 0) {
+        alert(`Successfully enrolled ${successCount} contact${successCount > 1 ? 's' : ''}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`)
+        onClose()
+        router.refresh()
+      } else {
+        alert('Failed to enroll any contacts. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error enrolling contacts:', error)
+      alert('Failed to enroll contacts. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleEnrollFromLists = async () => {
+    if (selectedLists.length === 0) {
+      alert('Please select at least one list')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+
+      // Get contacts from selected lists
+      const listContactPromises = selectedLists.map(async listId => {
+        const response = await fetch(`/api/contacts?list_id=${listId}&limit=1000`)
+        if (response.ok) {
+          const result = await response.json()
+          return result.data.contacts || []
+        }
+        return []
+      })
+
+      const listContactResults = await Promise.all(listContactPromises)
+      const allListContacts = listContactResults.flat()
+      
+      // Remove duplicates
+      const uniqueContacts = allListContacts.filter((contact, index, arr) => 
+        arr.findIndex(c => c.id === contact.id) === index
+      )
+
+      if (uniqueContacts.length === 0) {
+        alert('No contacts found in selected lists')
+        return
+      }
+
+      // Enroll all unique contacts
+      const enrollmentPromises = uniqueContacts.map(contact =>
+        fetch(`/api/workflows/${workflowId}/enroll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact_id: contact.id }),
+        })
+      )
+
+      const results = await Promise.allSettled(enrollmentPromises)
+      
+      const successCount = results.filter(result => result.status === 'fulfilled').length
+      const errorCount = results.filter(result => result.status === 'rejected').length
+
+      if (successCount > 0) {
+        alert(`Successfully enrolled ${successCount} contact${successCount > 1 ? 's' : ''} from selected lists${errorCount > 0 ? ` (${errorCount} failed)` : ''}`)
+        onClose()
+        router.refresh()
+      } else {
+        alert('Failed to enroll any contacts from lists. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error enrolling contacts from lists:', error)
+      alert('Failed to enroll contacts from lists. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+      <DialogContent className="max-w-4xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
             Enroll Contacts in Workflow
           </DialogTitle>
           <p className="text-sm text-gray-600">
-            Select contacts to enroll in "{workflowName}"
+            {workflowName}
           </p>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-            <Input
-              placeholder="Search contacts by name or email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-              disabled={loading || enrolling}
-            />
+        {loadingData ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin" />
+            <span className="ml-2 text-gray-600">Loading contacts...</span>
           </div>
-
-          {/* Loading State */}
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              <span className="text-gray-600">Loading contacts...</span>
-            </div>
-          ) : filteredContacts.length === 0 ? (
-            <div className="text-center py-8">
-              <Users className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {searchTerm ? 'No matching contacts' : 'No active contacts found'}
-              </h3>
-              <p className="text-gray-600">
-                {searchTerm 
-                  ? 'Try adjusting your search terms' 
-                  : 'Add some contacts first to enroll them in workflows'
-                }
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Select All */}
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+        ) : (
+          <Tabs defaultValue="individual" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="individual">Individual Contacts</TabsTrigger>
+              <TabsTrigger value="lists">From Lists</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="individual" className="space-y-4">
+              <div className="space-y-4">
                 <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="select-all"
-                    checked={selectedContactIds.length === filteredContacts.length && filteredContacts.length > 0}
-                    onCheckedChange={handleSelectAll}
-                    disabled={enrolling}
+                  <Search className="w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Search contacts..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex-1"
                   />
-                  <label htmlFor="select-all" className="text-sm font-medium text-gray-900 cursor-pointer">
-                    Select All ({filteredContacts.length})
-                  </label>
                 </div>
-                <Badge variant="outline">
-                  {selectedContactIds.length} selected
-                </Badge>
-              </div>
 
-              {/* Contact List */}
-              <div className="max-h-60 overflow-y-auto space-y-2">
-                {filteredContacts.map(contact => (
-                  <div key={contact.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
-                    <Checkbox
-                      id={contact.id}
-                      checked={selectedContactIds.includes(contact.id)}
-                      onCheckedChange={(checked) => handleContactToggle(contact.id, checked as boolean)}
-                      disabled={enrolling}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <label 
-                          htmlFor={contact.id}
-                          className="text-sm font-medium text-gray-900 cursor-pointer"
-                        >
-                          {contact.metadata.first_name} {contact.metadata.last_name}
-                        </label>
-                        <Badge variant="outline" className="text-xs">
-                          {contact.metadata.status.value}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-1 text-sm text-gray-600 mt-1">
-                        <Mail className="w-3 h-3" />
-                        {contact.metadata.email}
-                      </div>
-                      {contact.metadata.tags && contact.metadata.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {contact.metadata.tags.slice(0, 3).map(tag => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                          {contact.metadata.tags.length > 3 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{contact.metadata.tags.length - 3}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
+                <div className="max-h-96 overflow-y-auto border rounded-lg">
+                  {filteredContacts.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No contacts found
                     </div>
+                  ) : (
+                    <div className="space-y-2 p-4">
+                      {filteredContacts.map(contact => (
+                        <div key={contact.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                          <Checkbox
+                            checked={selectedContacts.includes(contact.id)}
+                            onCheckedChange={() => handleContactToggle(contact.id)}
+                            disabled={isLoading}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">
+                              {contact.metadata.first_name} {contact.metadata.last_name}
+                            </p>
+                            <p className="text-xs text-gray-600 truncate">
+                              {contact.metadata.email}
+                            </p>
+                          </div>
+                          <Badge 
+                            className={
+                              contact.metadata.status.value === 'Active' 
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }
+                          >
+                            {contact.metadata.status.value}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedContacts.length > 0 && (
+                  <div className="text-sm text-gray-600">
+                    {selectedContacts.length} contact{selectedContacts.length > 1 ? 's' : ''} selected
                   </div>
-                ))}
+                )}
               </div>
-            </>
-          )}
-        </div>
+            </TabsContent>
+
+            <TabsContent value="lists" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Select Lists</CardTitle>
+                  <CardDescription>
+                    All active contacts from selected lists will be enrolled
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {lists.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No lists found
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {lists.map(list => (
+                        <div key={list.id} className="flex items-center space-x-3 p-3 border rounded hover:bg-gray-50">
+                          <Checkbox
+                            checked={selectedLists.includes(list.id)}
+                            onCheckedChange={() => handleListToggle(list.id)}
+                            disabled={isLoading}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <p className="font-medium text-sm">
+                                {list.metadata.name}
+                              </p>
+                              <div className="flex items-center space-x-2">
+                                <Badge className="bg-blue-100 text-blue-800 text-xs">
+                                  {list.metadata.list_type.value}
+                                </Badge>
+                                <span className="text-xs text-gray-500">
+                                  {list.metadata.total_contacts || 0} contacts
+                                </span>
+                              </div>
+                            </div>
+                            {list.metadata.description && (
+                              <p className="text-xs text-gray-600 mt-1">
+                                {list.metadata.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedLists.length > 0 && (
+                    <div className="text-sm text-gray-600 mt-4">
+                      {selectedLists.length} list{selectedLists.length > 1 ? 's' : ''} selected
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        )}
 
         <DialogFooter>
           <Button
             variant="outline"
             onClick={onClose}
-            disabled={enrolling}
+            disabled={isLoading}
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleEnroll}
-            disabled={selectedContactIds.length === 0 || enrolling}
-            className="min-w-[120px]"
-          >
-            {enrolling ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Enrolling...
-              </>
-            ) : (
-              <>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Enroll {selectedContactIds.length} Contact{selectedContactIds.length !== 1 ? 's' : ''}
-              </>
-            )}
-          </Button>
+          
+          <Tabs defaultValue="individual" className="hidden">
+            <TabsContent value="individual">
+              <Button
+                onClick={handleEnrollContacts}
+                disabled={isLoading || selectedContacts.length === 0}
+                className="min-w-[120px]"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enrolling...
+                  </>
+                ) : (
+                  `Enroll ${selectedContacts.length} Contact${selectedContacts.length !== 1 ? 's' : ''}`
+                )}
+              </Button>
+            </TabsContent>
+            
+            <TabsContent value="lists">
+              <Button
+                onClick={handleEnrollFromLists}
+                disabled={isLoading || selectedLists.length === 0}
+                className="min-w-[120px]"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enrolling...
+                  </>
+                ) : (
+                  `Enroll from ${selectedLists.length} List${selectedLists.length !== 1 ? 's' : ''}`
+                )}
+              </Button>
+            </TabsContent>
+          </Tabs>
+          
+          {/* Dynamic button based on active tab */}
+          <div className="flex">
+            <Button
+              onClick={selectedLists.length > 0 ? handleEnrollFromLists : handleEnrollContacts}
+              disabled={isLoading || (selectedContacts.length === 0 && selectedLists.length === 0)}
+              className="min-w-[120px]"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enrolling...
+                </>
+              ) : selectedLists.length > 0 ? (
+                `Enroll from ${selectedLists.length} List${selectedLists.length !== 1 ? 's' : ''}`
+              ) : (
+                `Enroll ${selectedContacts.length} Contact${selectedContacts.length !== 1 ? 's' : ''}`
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

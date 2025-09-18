@@ -1,38 +1,29 @@
 // app/workflows/[id]/page.tsx
-import { getEmailWorkflow, getWorkflowEnrollments } from '@/lib/cosmic'
-import { WorkflowDetails } from '@/components/WorkflowDetails'
-import { ArrowLeft } from 'lucide-react'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import WorkflowDetails from '@/components/WorkflowDetails'
+import { getEmailWorkflow } from '@/lib/cosmic'
 
-interface WorkflowPageProps {
+interface PageProps {
   params: Promise<{ id: string }>
 }
 
-export default async function WorkflowPage({ params }: WorkflowPageProps) {
+export default async function WorkflowPage({ params }: PageProps) {
   const { id } = await params
   
-  const workflow = await getEmailWorkflow(id)
-  
-  if (!workflow) {
+  try {
+    const workflow = await getEmailWorkflow(id)
+    
+    if (!workflow) {
+      notFound()
+    }
+
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <WorkflowDetails workflow={workflow} />
+      </div>
+    )
+  } catch (error) {
+    console.error('Error loading workflow:', error)
     notFound()
   }
-
-  const enrollments = await getWorkflowEnrollments(id)
-
-  return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <Link 
-          href="/workflows" 
-          className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Workflows
-        </Link>
-      </div>
-
-      <WorkflowDetails workflow={workflow} enrollments={enrollments} />
-    </div>
-  )
 }
