@@ -1,42 +1,39 @@
 // app/workflows/[id]/edit/page.tsx
 import { notFound, redirect } from 'next/navigation'
-import { getEmailWorkflow } from '@/lib/cosmic'
+import { getEmailWorkflow, getEmailTemplates } from '@/lib/cosmic'
 import EditWorkflowForm from '@/components/EditWorkflowForm'
 
-interface PageProps {
+interface EditWorkflowPageProps {
   params: Promise<{ id: string }>
 }
 
-export default async function EditWorkflowPage({ params }: PageProps) {
-  // CRITICAL: In Next.js 15+, params are now Promises and MUST be awaited
+export default async function EditWorkflowPage({ params }: EditWorkflowPageProps) {
   const { id } = await params
   
   try {
-    const workflow = await getEmailWorkflow(id)
-    
+    const [workflow, templates] = await Promise.all([
+      getEmailWorkflow(id),
+      getEmailTemplates()
+    ])
+
     if (!workflow) {
       notFound()
     }
 
-    const handleCancel = () => {
-      redirect(`/workflows/${id}`)
-    }
-
-    const handleSave = () => {
-      redirect(`/workflows/${id}`)
-    }
-
     return (
-      <div className="space-y-6">
-        <div>
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Edit Workflow</h1>
-          <p className="text-gray-600">Update your email workflow settings and steps</p>
+          <p className="text-gray-600 mt-1">
+            Modify your automated email workflow settings and steps
+          </p>
         </div>
-        
-        <EditWorkflowForm 
+
+        <EditWorkflowForm
           workflow={workflow}
-          onCancel={handleCancel}
-          onSave={handleSave}
+          templates={templates}
+          onSave={() => redirect('/workflows')}
+          onCancel={() => redirect('/workflows')}
         />
       </div>
     )
