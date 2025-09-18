@@ -1,156 +1,103 @@
 'use client'
 
-import { useState, ReactNode, Dispatch, SetStateAction } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle } from 'lucide-react'
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription,
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from '@/components/ui/dialog'
+import { Loader2, AlertTriangle } from 'lucide-react'
 
 interface ConfirmationModalProps {
   title: string
-  description?: string
-  message?: string // Add message as alias for description for backward compatibility
+  description: string
   onConfirm: () => void | Promise<void>
-  trigger?: ReactNode
   confirmText?: string
   cancelText?: string
   variant?: 'default' | 'destructive'
   isLoading?: boolean
-  // Add controlled state props
-  isOpen?: boolean
-  onOpenChange?: Dispatch<SetStateAction<boolean>> | ((open: boolean) => void)
-  // Add option to prevent auto-close after confirm (useful for success modals)
-  preventAutoClose?: boolean
+  trigger?: React.ReactNode
+  children?: React.ReactNode
 }
 
 export default function ConfirmationModal({
   title,
   description,
-  message,
   onConfirm,
-  trigger,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'default',
   isLoading = false,
-  isOpen: controlledIsOpen,
-  onOpenChange: controlledOnOpenChange,
-  preventAutoClose = false
+  trigger,
+  children
 }: ConfirmationModalProps) {
-  const [internalIsOpen, setInternalIsOpen] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-
-  // Use controlled state if provided, otherwise use internal state
-  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen
-  const setIsOpen = controlledOnOpenChange || setInternalIsOpen
+  const [isOpen, setIsOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleConfirm = async () => {
-    setIsProcessing(true)
+    setIsSubmitting(true)
     try {
       await onConfirm()
-      // Only auto-close if preventAutoClose is false
-      if (!preventAutoClose) {
-        setIsOpen(false)
-      }
+      setIsOpen(false)
     } catch (error) {
-      console.error('Confirmation action failed:', error)
+      console.error('Error in confirmation action:', error)
     } finally {
-      setIsProcessing(false)
+      setIsSubmitting(false)
     }
   }
 
-  const loading = isLoading || isProcessing
-
-  // Use message or description (message takes precedence for backward compatibility)
-  const displayText = message || description || ''
-
-  // If no trigger is provided and we're using controlled state, render the dialog directly
-  if (!trigger && controlledIsOpen !== undefined) {
-    return (
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center space-x-3">
-              {variant === 'destructive' && (
-                <div className="flex-shrink-0">
-                  <AlertTriangle className="h-6 w-6 text-red-600" />
-                </div>
-              )}
-              <DialogTitle className="text-left">{title}</DialogTitle>
-            </div>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <p className="text-sm text-gray-600">{displayText}</p>
-          </div>
-
-          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end space-y-2 space-y-reverse sm:space-y-0 sm:space-x-2">
-            {cancelText && (
-              <DialogClose asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={loading}
-                >
-                  {cancelText}
-                </Button>
-              </DialogClose>
-            )}
-            <Button
-              type="button"
-              variant={variant === 'destructive' ? 'destructive' : 'default'}
-              onClick={handleConfirm}
-              disabled={loading}
-            >
-              {loading ? 'Processing...' : confirmText}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    )
+  const handleClose = () => {
+    if (!isSubmitting && !isLoading) {
+      setIsOpen(false)
+    }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      {trigger && (
-        <DialogTrigger asChild>
-          {trigger}
-        </DialogTrigger>
-      )}
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogTrigger asChild>
+        {trigger || children}
+      </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center space-x-3">
+          <DialogTitle className="flex items-center gap-2">
             {variant === 'destructive' && (
-              <div className="flex-shrink-0">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
+              <AlertTriangle className="w-5 h-5 text-red-600" />
             )}
-            <DialogTitle className="text-left">{title}</DialogTitle>
-          </div>
+            {title}
+          </DialogTitle>
+          <DialogDescription>
+            {description}
+          </DialogDescription>
         </DialogHeader>
-        
-        <div className="py-4">
-          <p className="text-sm text-gray-600">{displayText}</p>
-        </div>
-
-        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end space-y-2 space-y-reverse sm:space-y-0 sm:space-x-2">
-          {cancelText && (
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={loading}
-              >
-                {cancelText}
-              </Button>
-            </DialogClose>
-          )}
+        <DialogFooter>
           <Button
             type="button"
-            variant={variant === 'destructive' ? 'destructive' : 'default'}
-            onClick={handleConfirm}
-            disabled={loading}
+            variant="outline"
+            onClick={handleClose}
+            disabled={isSubmitting || isLoading}
           >
-            {loading ? 'Processing...' : confirmText}
+            {cancelText}
+          </Button>
+          <Button
+            type="button"
+            variant={variant}
+            onClick={handleConfirm}
+            disabled={isSubmitting || isLoading}
+            className="min-w-[100px]"
+          >
+            {(isSubmitting || isLoading) ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              confirmText
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

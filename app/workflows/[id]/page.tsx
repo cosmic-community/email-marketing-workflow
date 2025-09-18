@@ -1,14 +1,17 @@
 // app/workflows/[id]/page.tsx
-import { notFound } from 'next/navigation'
 import { getEmailWorkflow, getEmailTemplates } from '@/lib/cosmic'
+import { notFound } from 'next/navigation'
 import WorkflowDetails from '@/components/WorkflowDetails'
+
+// Force dynamic rendering to ensure fresh data
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 interface WorkflowPageProps {
   params: Promise<{ id: string }>
 }
 
 export default async function WorkflowPage({ params }: WorkflowPageProps) {
-  // IMPORTANT: In Next.js 15+, params are now Promises and MUST be awaited
   const { id } = await params
   
   const [workflow, templates] = await Promise.all([
@@ -21,7 +24,7 @@ export default async function WorkflowPage({ params }: WorkflowPageProps) {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="min-h-screen bg-gray-50">
       <WorkflowDetails workflow={workflow} templates={templates} />
     </div>
   )
