@@ -10,18 +10,17 @@ export async function POST(
   try {
     const { id } = await params
     
-    const duplicatedWorkflow = await duplicateEmailWorkflow(id)
-    
+    // Duplicate the workflow
+    const result = await duplicateEmailWorkflow(id)
+
+    // Revalidate the workflows page
     revalidatePath('/workflows')
-    
-    return NextResponse.json({ 
-      success: true, 
-      data: duplicatedWorkflow 
-    })
+
+    return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    console.error('Error duplicating workflow:', error)
+    console.error('Error duplicating email workflow:', error)
     return NextResponse.json(
-      { error: 'Failed to duplicate workflow' },
+      { error: error instanceof Error ? error.message : 'Failed to duplicate email workflow' },
       { status: 500 }
     )
   }

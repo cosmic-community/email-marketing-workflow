@@ -1,29 +1,38 @@
-import { CreateWorkflowForm } from '@/components/CreateWorkflowForm'
-import { ArrowLeft, Workflow } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { ArrowLeft } from 'lucide-react'
+import CreateWorkflowForm from '@/components/CreateWorkflowForm'
+import { getEmailTemplates, getEmailLists } from '@/lib/cosmic'
 
-export default function NewWorkflowPage() {
+export const dynamic = 'force-dynamic'
+
+export default async function NewWorkflowPage() {
+  let templates = []
+  let lists = []
+
+  try {
+    templates = await getEmailTemplates()
+    lists = await getEmailLists()
+  } catch (error) {
+    console.error('Error fetching data:', error)
+  }
+
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <Link 
-          href="/workflows" 
-          className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Workflows
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-8">
+        <Link href="/workflows">
+          <Button variant="outline" className="mb-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Workflows
+          </Button>
         </Link>
-        
-        <div className="flex items-center gap-3">
-          <Workflow className="w-8 h-8 text-blue-600" />
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Create New Workflow</h1>
-            <p className="text-gray-600">Set up an automated email sequence with custom timing</p>
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Create New Workflow</h1>
+        <p className="text-gray-600 mt-2">
+          Set up automated email sequences to nurture your contacts
+        </p>
       </div>
 
-      <CreateWorkflowForm />
+      <CreateWorkflowForm templates={templates} lists={lists} />
     </div>
   )
 }

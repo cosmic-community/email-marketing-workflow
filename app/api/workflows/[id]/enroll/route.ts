@@ -8,47 +8,30 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const { id: workflowId } = await params
     const body = await request.json()
     
-    if (!body.contact_ids || !Array.isArray(body.contact_ids)) {
+    // Validate required fields
+    if (!body.contact_id) {
       return NextResponse.json(
-        { error: 'Contact IDs array is required' },
+        { error: 'Contact ID is required' },
         { status: 400 }
       )
     }
 
-    const results = {
-      enrolled: 0,
-      errors: [] as string[]
-    }
+    // Enroll the contact
+    const result = await enrollContactInWorkflow(workflowId, body.contact_id)
 
-    // Enroll each contact
-    for (const contactId of body.contact_ids) {
-      try {
-        await enrollContactInWorkflow(id, contactId)
-        results.enrolled++
-      } catch (error) {
-        console.error(`Error enrolling contact ${contactId}:`, error)
-        results.errors.push(
-          `Failed to enroll contact ${contactId}: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`
-        )
-      }
-    }
+    // Revalidate relevant pages
+    revalidatePath('/workflows')
+    revalidatePath(`/workflows/${workflowId}`)
+    revalidatePath('/contacts')
 
-    revalidatePath(`/workflows/${id}`)
-    
-    return NextResponse.json({ 
-      success: true, 
-      data: results,
-      message: `Enrolled ${results.enrolled} contacts${results.errors.length > 0 ? ` with ${results.errors.length} errors` : ''}`
-    })
+    return NextResponse.json({ success: true, data: result })
   } catch (error) {
-    console.error('Error enrolling contacts in workflow:', error)
+    console.error('Error enrolling contact in workflow:', error)
     return NextResponse.json(
-      { error: 'Failed to enroll contacts' },
+      { error: error instanceof Error ? error.message : 'Failed to enroll contact in workflow' },
       { status: 500 }
     )
   }
