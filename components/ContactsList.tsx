@@ -69,6 +69,11 @@ export default function ContactsList({
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showListManagement, setShowListManagement] = useState(false);
 
+  // Modal state for confirmation modals
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+  const [singleDeleteModalOpen, setSingleDeleteModalOpen] = useState(false);
+
   // Fetch available lists for filter display
   useEffect(() => {
     fetchLists();
@@ -273,6 +278,7 @@ export default function ContactsList({
       }
 
       setSelectedContacts([]);
+      setBulkDeleteModalOpen(false);
       router.refresh();
     } catch (error) {
       console.error("Error deleting contacts:", error);
@@ -560,6 +566,8 @@ export default function ContactsList({
                 Update Selected
               </Button>
               <ConfirmationModal
+                isOpen={bulkDeleteModalOpen}
+                onOpenChange={setBulkDeleteModalOpen}
                 title="Delete Selected Contacts"
                 description={`Are you sure you want to delete ${
                   selectedContacts.length
@@ -576,6 +584,7 @@ export default function ContactsList({
                     size="sm"
                     disabled={bulkActionLoading}
                     className="bg-white text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => setBulkDeleteModalOpen(true)}
                   >
                     {bulkActionLoading ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -727,6 +736,11 @@ export default function ContactsList({
                         </Button>
                       </EditContactModal>
                       <ConfirmationModal
+                        isOpen={singleDeleteModalOpen && deletingId === contact.id}
+                        onOpenChange={(open) => {
+                          setSingleDeleteModalOpen(open);
+                          if (!open) setDeletingId(null);
+                        }}
                         title="Delete Contact"
                         description={`Are you sure you want to delete ${contact.metadata.first_name} ${contact.metadata.last_name}? This action cannot be undone.`}
                         onConfirm={() => handleDelete(contact.id)}
@@ -736,6 +750,10 @@ export default function ContactsList({
                             size="sm"
                             disabled={deletingId === contact.id}
                             className="text-red-600 hover:text-red-700"
+                            onClick={() => {
+                              setDeletingId(contact.id);
+                              setSingleDeleteModalOpen(true);
+                            }}
                           >
                             {deletingId === contact.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
