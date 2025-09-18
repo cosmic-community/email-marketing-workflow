@@ -15,6 +15,11 @@ import {
   CampaignStats,
   CosmicResponse,
   MediaItem,
+  EmailWorkflow,
+  WorkflowEnrollment,
+  CreateWorkflowData,
+  UpdateWorkflowData,
+  WorkflowStep,
 } from "@/types";
 
 if (
@@ -1585,6 +1590,345 @@ export async function getCampaignTargetContacts(
   } catch (error) {
     console.error("Error getting campaign target contacts:", error);
     throw new Error("Failed to get campaign target contacts");
+  }
+}
+
+// NEW: Email Workflows Functions
+export async function getEmailWorkflows(): Promise<EmailWorkflow[]> {
+  try {
+    const { objects } = await cosmic.objects
+      .find({ type: "email-workflows" })
+      .props(["id", "title", "slug", "metadata", "created_at", "modified_at"])
+      .depth(1);
+
+    return objects as EmailWorkflow[];
+  } catch (error) {
+    if (hasStatus(error) && error.status === 404) {
+      return [];
+    }
+    console.error("Error fetching email workflows:", error);
+    throw new Error("Failed to fetch email workflows");
+  }
+}
+
+export async function getEmailWorkflow(id: string): Promise<EmailWorkflow | null> {
+  try {
+    const { object } = await cosmic.objects
+      .findOne({ id })
+      .props(["id", "title", "slug", "metadata", "created_at", "modified_at"])
+      .depth(1);
+
+    return object as EmailWorkflow;
+  } catch (error) {
+    if (hasStatus(error) && error.status === 404) {
+      return null;
+    }
+    console.error(`Error fetching email workflow ${id}:`, error);
+    throw new Error("Failed to fetch email workflow");
+  }
+}
+
+export async function createEmailWorkflow(data: CreateWorkflowData): Promise<EmailWorkflow> {
+  try {
+    // Validate templates exist
+    for (const step of data.steps) {
+      const template = await getEmailTemplate(step.template_id);
+      if (!template) {
+        throw new Error(`Template ${step.template_id} not found`);
+      }
+    }
+
+    // Generate step IDs and ensure proper order
+    const stepsWithIds: WorkflowStep[] = data.steps.map((step, index) => ({
+      id: `step-${Date.now()}-${index}`,
+      step_number: index + 1,
+      template_id: step.template_id,
+      delay_days: step.delay_days,
+      delay_hours: step.delay_hours,
+      delay_minutes: step.delay_minutes,
+      active: step.active,
+    }));
+
+    const { object } = await cosmic.objects.insertOne({
+      title: data.name,
+      type: "email-workflows",
+      metadata: {
+        name: data.name,
+        description: data.description || "",
+        status: {
+          key: "draft",
+          value: "Draft",
+        },
+        trigger_type: {
+          key: data.trigger_type.toLowerCase().replace(" ", "_"),
+          value: data.trigger_type,
+        },
+        trigger_lists: data.trigger_lists || [],
+        trigger_tags: data.trigger_tags || [],
+        trigger_date: data.trigger_date || "",
+        steps: stepsWithIds,
+        stats: {
+          total_enrolled: 0,
+          total_completed: 0,
+          completion_rate: "0%",
+          total_emails_sent: 0,
+        },
+        created_date: new Date().toISOString().split("T")[0],
+        last_modified: new Date().toISOString(),
+      },
+    });
+
+    return object as EmailWorkflow;
+  } catch (error) {
+    console.error("Error creating email workflow:", error);
+    throw new Error("Failed to create email workflow");
+  }
+}
+
+export async function updateEmailWorkflow(
+  id: string,
+  data: UpdateWorkflowData
+): Promise<EmailWorkflow> {
+  try {
+    const updateData: any = {};
+
+    if (data.name !== undefined) {
+      updateData.title = data.name;
+    }
+
+    // Build metadata updates - ONLY include changed fields
+    const metadataUpdates: any = {};
+
+    if (data.name !== undefined) metadataUpdates.name = data.name;
+    if (data.description !== undefined) metadataUpdates.description = data.description;
+    if (data.trigger_lists !== undefined) metadataUpdates.trigger_lists = data.trigger_lists;
+    if (data.trigger_tags !== undefined) metadataUpdates.trigger_tags = data.trigger_tags;
+    if (data.trigger_date !== undefined) metadataUpdates.trigger_date = data.trigger_date;
+
+    if (data.status !== undefined) {
+      metadataUpdates.status = {
+        key: data.status.toLowerCase(),
+        value: data.status,
+      };
+    }
+
+    if (data.trigger_type !== undefined) {
+      metadataUpdates.trigger_type = {
+        key: data.trigger_type.toLowerCase().replace(" ", "_"),
+        value: data.trigger_type,
+      };
+    }
+
+    if (data.steps !== undefined) {
+      // Validate templates exist
+      for (const step of data.steps) {
+        const template = await getEmailTemplate(step.template_id);
+        if (!template) {
+          throw new Error(`Template ${step.template_id} not found`);
+        }
+      }
+
+      const stepsWithIds: WorkflowStep[] = data.steps.map((step, index) => ({
+        id: `step-${Date.now()}-${index}`,
+        step_number: index + 1,
+        template_id: step.template_id,
+        delay_days: step.delay_days,
+        delay_hours: step.delay_hours,
+        delay_minutes: step.delay_minutes,
+        active: step.active,
+      }));
+
+      metadataUpdates.steps = stepsWithIds;
+    }
+
+    // Always update last_modified
+    metadataUpdates.last_modified = new Date().toISOString();
+
+    if (Object.keys(metadataUpdates).length > 0) {
+      updateData.metadata = metadataUpdates;
+    }
+
+    const { object } = await cosmic.objects.updateOne(id, updateData);
+    return object as EmailWorkflow;
+  } catch (error) {
+    console.error(`Error updating email workflow ${id}:`, error);
+    throw new Error("Failed to update email workflow");
+  }
+}
+
+export async function deleteEmailWorkflow(id: string): Promise<void> {
+  try {
+    // Also delete any enrollments for this workflow
+    await deleteWorkflowEnrollments(id);
+    
+    await cosmic.objects.deleteOne(id);
+  } catch (error) {
+    console.error(`Error deleting email workflow ${id}:`, error);
+    throw new Error("Failed to delete email workflow");
+  }
+}
+
+export async function duplicateEmailWorkflow(id: string): Promise<EmailWorkflow> {
+  try {
+    const original = await getEmailWorkflow(id);
+    if (!original) {
+      throw new Error("Original workflow not found");
+    }
+
+    const duplicatedData: CreateWorkflowData = {
+      name: `${original.metadata.name} (Copy)`,
+      description: original.metadata.description,
+      trigger_type: original.metadata.trigger_type.value,
+      trigger_lists: original.metadata.trigger_lists,
+      trigger_tags: original.metadata.trigger_tags,
+      trigger_date: original.metadata.trigger_date,
+      steps: original.metadata.steps.map(step => ({
+        template_id: step.template_id,
+        delay_days: step.delay_days,
+        delay_hours: step.delay_hours,
+        delay_minutes: step.delay_minutes,
+        active: step.active,
+      })),
+    };
+
+    return await createEmailWorkflow(duplicatedData);
+  } catch (error) {
+    console.error(`Error duplicating email workflow ${id}:`, error);
+    throw new Error("Failed to duplicate email workflow");
+  }
+}
+
+// NEW: Workflow Enrollment Functions
+export async function getWorkflowEnrollments(workflowId?: string): Promise<WorkflowEnrollment[]> {
+  try {
+    const query: any = { type: "workflow-enrollments" };
+    if (workflowId) {
+      query["metadata.workflow_id"] = workflowId;
+    }
+
+    const { objects } = await cosmic.objects
+      .find(query)
+      .props(["id", "title", "slug", "metadata", "created_at", "modified_at"])
+      .depth(1);
+
+    return objects as WorkflowEnrollment[];
+  } catch (error) {
+    if (hasStatus(error) && error.status === 404) {
+      return [];
+    }
+    console.error("Error fetching workflow enrollments:", error);
+    throw new Error("Failed to fetch workflow enrollments");
+  }
+}
+
+export async function enrollContactInWorkflow(
+  workflowId: string,
+  contactId: string
+): Promise<WorkflowEnrollment> {
+  try {
+    // Check if contact is already enrolled
+    const existingEnrollments = await getWorkflowEnrollments(workflowId);
+    const alreadyEnrolled = existingEnrollments.find(
+      enrollment => enrollment.metadata.contact_id === contactId
+    );
+
+    if (alreadyEnrolled) {
+      throw new Error("Contact is already enrolled in this workflow");
+    }
+
+    // Get workflow and contact details
+    const workflow = await getEmailWorkflow(workflowId);
+    const contact = await getEmailContact(contactId);
+
+    if (!workflow) throw new Error("Workflow not found");
+    if (!contact) throw new Error("Contact not found");
+
+    // Calculate next send date for first step
+    const firstStep = workflow.metadata.steps.find(step => step.step_number === 1);
+    let nextSendDate = "";
+
+    if (firstStep) {
+      const now = new Date();
+      const delayMs = (firstStep.delay_days * 24 * 60 * 60 * 1000) +
+                     (firstStep.delay_hours * 60 * 60 * 1000) +
+                     (firstStep.delay_minutes * 60 * 1000);
+      nextSendDate = new Date(now.getTime() + delayMs).toISOString();
+    }
+
+    const { object } = await cosmic.objects.insertOne({
+      title: `${contact.metadata.email} - ${workflow.metadata.name}`,
+      type: "workflow-enrollments",
+      metadata: {
+        workflow_id: workflowId,
+        contact_id: contactId,
+        current_step: 1,
+        status: {
+          key: "active",
+          value: "Active",
+        },
+        enrolled_date: new Date().toISOString(),
+        next_send_date: nextSendDate,
+        step_history: [],
+      },
+    });
+
+    return object as WorkflowEnrollment;
+  } catch (error) {
+    console.error("Error enrolling contact in workflow:", error);
+    throw new Error("Failed to enroll contact in workflow");
+  }
+}
+
+export async function updateWorkflowEnrollment(
+  enrollmentId: string,
+  data: {
+    current_step?: number;
+    status?: "Active" | "Completed" | "Failed" | "Unsubscribed";
+    next_send_date?: string;
+    completed_date?: string;
+    step_history?: Array<{
+      step_number: number;
+      sent_date: string;
+      status: "Sent" | "Failed" | "Skipped";
+    }>;
+  }
+): Promise<WorkflowEnrollment> {
+  try {
+    const metadataUpdates: any = {};
+
+    if (data.current_step !== undefined) metadataUpdates.current_step = data.current_step;
+    if (data.next_send_date !== undefined) metadataUpdates.next_send_date = data.next_send_date;
+    if (data.completed_date !== undefined) metadataUpdates.completed_date = data.completed_date;
+    if (data.step_history !== undefined) metadataUpdates.step_history = data.step_history;
+
+    if (data.status !== undefined) {
+      metadataUpdates.status = {
+        key: data.status.toLowerCase(),
+        value: data.status,
+      };
+    }
+
+    const { object } = await cosmic.objects.updateOne(enrollmentId, {
+      metadata: metadataUpdates,
+    });
+
+    return object as WorkflowEnrollment;
+  } catch (error) {
+    console.error(`Error updating workflow enrollment ${enrollmentId}:`, error);
+    throw new Error("Failed to update workflow enrollment");
+  }
+}
+
+export async function deleteWorkflowEnrollments(workflowId: string): Promise<void> {
+  try {
+    const enrollments = await getWorkflowEnrollments(workflowId);
+    
+    for (const enrollment of enrollments) {
+      await cosmic.objects.deleteOne(enrollment.id);
+    }
+  } catch (error) {
+    console.error(`Error deleting workflow enrollments for ${workflowId}:`, error);
+    throw new Error("Failed to delete workflow enrollments");
   }
 }
 

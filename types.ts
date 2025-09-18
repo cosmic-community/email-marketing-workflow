@@ -174,6 +174,71 @@ export interface EmailCampaign extends CosmicObject {
 // Add Campaign type alias for backward compatibility
 export type Campaign = MarketingCampaign;
 
+// NEW: Workflow Step interface
+export interface WorkflowStep {
+  id: string;
+  step_number: number;
+  template_id: string;
+  template?: EmailTemplate; // Populated when depth > 0
+  delay_days: number;
+  delay_hours: number;
+  delay_minutes: number;
+  active: boolean;
+}
+
+// NEW: Email Workflow interface
+export interface EmailWorkflow extends CosmicObject {
+  type: "email-workflows";
+  metadata: {
+    name: string;
+    description?: string;
+    status: {
+      key: string;
+      value: "Draft" | "Active" | "Paused" | "Completed";
+    };
+    trigger_type: {
+      key: string;
+      value: "Manual" | "List Subscribe" | "Tag Added" | "Date Based";
+    };
+    trigger_lists?: string[]; // List IDs that trigger this workflow
+    trigger_tags?: string[]; // Tags that trigger this workflow
+    trigger_date?: string; // For date-based triggers
+    steps: WorkflowStep[];
+    stats?: {
+      total_enrolled: number;
+      total_completed: number;
+      completion_rate: string;
+      total_emails_sent: number;
+    };
+    created_date: string;
+    last_modified: string;
+  };
+}
+
+// NEW: Workflow Enrollment interface (tracks contacts in workflows)
+export interface WorkflowEnrollment extends CosmicObject {
+  type: "workflow-enrollments";
+  metadata: {
+    workflow_id: string;
+    workflow?: EmailWorkflow; // Populated when depth > 0
+    contact_id: string;
+    contact?: EmailContact; // Populated when depth > 0
+    current_step: number;
+    status: {
+      key: string;
+      value: "Active" | "Completed" | "Failed" | "Unsubscribed";
+    };
+    enrolled_date: string;
+    next_send_date?: string;
+    completed_date?: string;
+    step_history: {
+      step_number: number;
+      sent_date: string;
+      status: "Sent" | "Failed" | "Skipped";
+    }[];
+  };
+}
+
 // Settings interface - Updated to use comma-separated string for test_emails
 export interface Settings extends CosmicObject {
   type: "settings";
@@ -253,6 +318,29 @@ export interface CreateCampaignData {
   content?: string; // NEW: content for campaign content
 }
 
+// NEW: Workflow form data types
+export interface CreateWorkflowStepData {
+  template_id: string;
+  delay_days: number;
+  delay_hours: number;
+  delay_minutes: number;
+  active: boolean;
+}
+
+export interface CreateWorkflowData {
+  name: string;
+  description?: string;
+  trigger_type: "Manual" | "List Subscribe" | "Tag Added" | "Date Based";
+  trigger_lists?: string[];
+  trigger_tags?: string[];
+  trigger_date?: string;
+  steps: CreateWorkflowStepData[];
+}
+
+export interface UpdateWorkflowData extends Partial<CreateWorkflowData> {
+  status?: "Draft" | "Active" | "Paused" | "Completed";
+}
+
 export interface UpdateSettingsData {
   from_name: string;
   from_email: string;
@@ -298,6 +386,14 @@ export function isMarketingCampaign(
   return obj.type === "marketing-campaigns";
 }
 
+export function isEmailWorkflow(obj: CosmicObject): obj is EmailWorkflow {
+  return obj.type === "email-workflows";
+}
+
+export function isWorkflowEnrollment(obj: CosmicObject): obj is WorkflowEnrollment {
+  return obj.type === "workflow-enrollments";
+}
+
 export function isSettings(obj: CosmicObject): obj is Settings {
   return obj.type === "settings";
 }
@@ -322,6 +418,10 @@ export type CreateTemplateFormData = Omit<
 >;
 export type CreateCampaignFormData = Omit<
   MarketingCampaign,
+  "id" | "created_at" | "modified_at"
+>;
+export type CreateWorkflowFormData = Omit<
+  EmailWorkflow,
   "id" | "created_at" | "modified_at"
 >;
 export type CreateSettingsFormData = Omit<
