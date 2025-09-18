@@ -1,44 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 
 export async function POST(request: NextRequest) {
   try {
-    const { code } = await request.json()
+    const { accessCode } = await request.json()
     
-    // Get the access code from environment variables
-    const validCode = process.env.ACCESS_CODE
-    
-    if (!validCode) {
-      return NextResponse.json(
-        { error: 'Access code not configured' },
-        { status: 500 }
-      )
-    }
-    
-    // Check if the provided code matches the environment variable
-    if (code !== validCode) {
+    // Check if access code matches
+    if (accessCode !== '0627') {
       return NextResponse.json(
         { error: 'Invalid access code' },
         { status: 401 }
       )
     }
-    
+
     // Set authentication cookie
     const response = NextResponse.json({ success: true })
     
-    // Set cookie that expires in 24 hours
-    response.cookies.set('email-marketing-auth', 'authenticated', {
+    // Set httpOnly cookie that expires in 24 hours
+    response.cookies.set('auth-token', 'authenticated', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 // 24 hours
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 // 24 hours in seconds
     })
-    
+
     return response
   } catch (error) {
+    console.error('Login error:', error)
     return NextResponse.json(
-      { error: 'Invalid request' },
-      { status: 400 }
+      { error: 'Authentication failed' },
+      { status: 500 }
     )
   }
 }
