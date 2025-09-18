@@ -1,99 +1,155 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription,
-  DialogFooter, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from '@/components/ui/dialog'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 
-interface ConfirmationModalProps {
+export interface ConfirmationModalProps {
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
   title: string
-  description: string
-  onConfirm: () => void | Promise<void>
+  message?: string
+  description?: string
   confirmText?: string
   cancelText?: string
   variant?: 'default' | 'destructive'
+  onConfirm: () => void | Promise<void>
   isLoading?: boolean
-  trigger?: React.ReactNode
-  children?: React.ReactNode
+  preventAutoClose?: boolean
+  trigger?: ReactNode
 }
 
 export default function ConfirmationModal({
+  isOpen,
+  onOpenChange,
   title,
+  message,
   description,
-  onConfirm,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'default',
+  onConfirm,
   isLoading = false,
-  trigger,
-  children
+  preventAutoClose = false,
+  trigger
 }: ConfirmationModalProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isConfirming, setIsConfirming] = useState(false)
 
   const handleConfirm = async () => {
-    setIsSubmitting(true)
+    if (isConfirming || isLoading) return
+    
+    setIsConfirming(true)
     try {
       await onConfirm()
-      setIsOpen(false)
+      if (!preventAutoClose) {
+        onOpenChange(false)
+      }
     } catch (error) {
       console.error('Error in confirmation action:', error)
     } finally {
-      setIsSubmitting(false)
+      setIsConfirming(false)
     }
   }
 
-  const handleClose = () => {
-    if (!isSubmitting && !isLoading) {
-      setIsOpen(false)
+  const handleCancel = () => {
+    if (!isConfirming && !isLoading) {
+      onOpenChange(false)
     }
+  }
+
+  const displayMessage = message || description
+  const loading = isConfirming || isLoading
+
+  if (trigger) {
+    return (
+      <Dialog open={isOpen} onOpenChange={onOpenChange}>
+        {trigger}
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {variant === 'destructive' && (
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+              )}
+              {title}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {displayMessage && (
+            <div className="py-4">
+              <p className="text-sm text-gray-600">
+                {displayMessage}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              disabled={loading}
+            >
+              {cancelText}
+            </Button>
+            <Button
+              variant={variant}
+              onClick={handleConfirm}
+              disabled={loading}
+              className="min-w-[100px]"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {variant === 'destructive' ? 'Deleting...' : 'Loading...'}
+                </>
+              ) : (
+                confirmText
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogTrigger asChild>
-        {trigger || children}
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {variant === 'destructive' && (
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <AlertTriangle className="h-5 w-5 text-red-500" />
             )}
             {title}
           </DialogTitle>
-          <DialogDescription>
-            {description}
-          </DialogDescription>
         </DialogHeader>
+        
+        {displayMessage && (
+          <div className="py-4">
+            <p className="text-sm text-gray-600">
+              {displayMessage}
+            </p>
+          </div>
+        )}
+
         <DialogFooter>
           <Button
-            type="button"
             variant="outline"
-            onClick={handleClose}
-            disabled={isSubmitting || isLoading}
+            onClick={handleCancel}
+            disabled={loading}
           >
             {cancelText}
           </Button>
           <Button
-            type="button"
             variant={variant}
             onClick={handleConfirm}
-            disabled={isSubmitting || isLoading}
+            disabled={loading}
             className="min-w-[100px]"
           >
-            {(isSubmitting || isLoading) ? (
+            {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
+                {variant === 'destructive' ? 'Deleting...' : 'Loading...'}
               </>
             ) : (
               confirmText
