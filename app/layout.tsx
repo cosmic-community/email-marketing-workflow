@@ -1,47 +1,34 @@
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
-import Layout from '@/components/Layout'
-import { Toaster } from '@/components/ui/toaster'
-import { getSettings } from '@/lib/cosmic'
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import Layout from "@/components/Layout";
+import { ToastProvider } from "@/components/ToastProvider";
+import CosmicBadge from "@/components/CosmicBadge";
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Email Marketing Dashboard',
-  description: 'Manage your email campaigns, contacts, and templates with AI assistance',
-}
+  title: "Email Marketing Workflow",
+  description: "Manage your email marketing campaigns with ease",
+};
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
-  // Fetch company name on server-side once
-  let companyName = "Email Marketing";
-  
-  try {
-    const settings = await getSettings();
-    const settingsCompanyName = settings?.metadata?.company_name;
-    if (settingsCompanyName?.trim()) {
-      companyName = settingsCompanyName;
-    }
-  } catch (error) {
-    console.error("Failed to fetch company name:", error);
-    // Keep default "Email Marketing" on error
-  }
+  const bucketSlug = process.env.COSMIC_BUCKET_SLUG as string;
 
   return (
     <html lang="en">
-      <head>
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📧</text></svg>" />
-      </head>
       <body className={inter.className}>
-        <Layout companyName={companyName}>
-          {children}
-        </Layout>
-        <Toaster />
+        <ToastProvider>
+          <Layout>
+            {children}
+          </Layout>
+          <CosmicBadge bucketSlug={bucketSlug} />
+        </ToastProvider>
       </body>
     </html>
-  )
+  );
 }

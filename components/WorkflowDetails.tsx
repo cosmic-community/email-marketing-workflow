@@ -1,10 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { EmailWorkflow, WorkflowEnrollment } from '@/types'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Play, 
@@ -13,41 +13,32 @@ import {
   Copy, 
   Trash2, 
   Users, 
-  Mail,
-  Clock,
+  Mail, 
+  Clock, 
   TrendingUp,
+  Plus,
   Settings,
-  Calendar,
-  Tag,
-  UserPlus,
-  ArrowRight,
-  CheckCircle,
-  XCircle,
-  Loader2
+  Eye
 } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import TimeAgo from '@/components/TimeAgo'
-import { ConfirmationModal } from '@/components/ConfirmationModal'
-import { ContactEnrollmentModal } from '@/components/ContactEnrollmentModal'
+import { EmailWorkflow, WorkflowEnrollment } from '@/types'
+import EditWorkflowForm from './EditWorkflowForm'
+import ContactEnrollmentModal from './ContactEnrollmentModal'
+import ConfirmationModal from '@/components/ConfirmationModal'
 
 interface WorkflowDetailsProps {
   workflow: EmailWorkflow
   enrollments: WorkflowEnrollment[]
 }
 
-export function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps) {
+export default function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps) {
   const router = useRouter()
-  const [actionLoading, setActionLoading] = useState(false)
-  const [enrollmentModal, setEnrollmentModal] = useState(false)
-  const [deleteModal, setDeleteModal] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [showEnrollment, setShowEnrollment] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  const handleStatusToggle = async () => {
-    const newStatus = workflow.metadata.status.value === 'Active' ? 'Paused' : 'Active'
-    
+  const handleStatusChange = async (newStatus: 'Active' | 'Paused' | 'Draft') => {
+    setActionLoading('status')
     try {
-      setActionLoading(true)
-      
       const response = await fetch(`/api/workflows/${workflow.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -63,14 +54,13 @@ export function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps)
       console.error('Error updating workflow status:', error)
       alert('Failed to update workflow status')
     } finally {
-      setActionLoading(false)
+      setActionLoading(null)
     }
   }
 
   const handleDuplicate = async () => {
+    setActionLoading('duplicate')
     try {
-      setActionLoading(true)
-      
       const response = await fetch(`/api/workflows/${workflow.id}/duplicate`, {
         method: 'POST',
       })
@@ -85,14 +75,13 @@ export function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps)
       console.error('Error duplicating workflow:', error)
       alert('Failed to duplicate workflow')
     } finally {
-      setActionLoading(false)
+      setActionLoading(null)
     }
   }
 
   const handleDelete = async () => {
+    setActionLoading('delete')
     try {
-      setActionLoading(true)
-      
       const response = await fetch(`/api/workflows/${workflow.id}`, {
         method: 'DELETE',
       })
@@ -106,8 +95,16 @@ export function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps)
       console.error('Error deleting workflow:', error)
       alert('Failed to delete workflow')
     } finally {
-      setActionLoading(false)
+      setActionLoading(null)
     }
+  }
+
+  const formatDelay = (days: number, hours: number, minutes: number) => {
+    const parts = []
+    if (days > 0) parts.push(`${days}d`)
+    if (hours > 0) parts.push(`${hours}h`)
+    if (minutes > 0) parts.push(`${minutes}m`)
+    return parts.join(' ') || '0m'
   }
 
   const getStatusColor = (status: string) => {
@@ -118,383 +115,310 @@ export function WorkflowDetails({ workflow, enrollments }: WorkflowDetailsProps)
         return 'bg-yellow-100 text-yellow-800'
       case 'Draft':
         return 'bg-gray-100 text-gray-800'
-      case 'Completed':
-        return 'bg-blue-100 text-blue-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
   }
 
-  const getTriggerTypeColor = (triggerType: string) => {
-    switch (triggerType) {
+  const getTriggerDescription = () => {
+    const { trigger_type, trigger_lists, trigger_tags, trigger_date } = workflow.metadata
+    
+    switch (trigger_type.value) {
       case 'Manual':
-        return 'bg-purple-100 text-purple-800'
+        return 'Manually triggered for selected contacts'
       case 'List Subscribe':
-        return 'bg-blue-100 text-blue-800'
+        return `Triggered when contacts join: ${trigger_lists?.join(', ') || 'No lists selected'}`
       case 'Tag Added':
-        return 'bg-green-100 text-green-800'
+        return `Triggered when contacts get tags: ${trigger_tags?.join(', ') || 'No tags selected'}`
       case 'Date Based':
-        return 'bg-orange-100 text-orange-800'
+        return `Triggered on: ${trigger_date || 'No date set'}`
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'Unknown trigger type'
     }
   }
 
-  const getEnrollmentStatusColor = (status: string) => {
-    switch (status) {
-      case 'Active':
-        return 'bg-blue-100 text-blue-800'
-      case 'Completed':
-        return 'bg-green-100 text-green-800'
-      case 'Failed':
-        return 'bg-red-100 text-red-800'
-      case 'Unsubscribed':
-        return 'bg-gray-100 text-gray-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const activeEnrollments = enrollments.filter(e => e.metadata.status.value === 'Active').length
+  const completedEnrollments = enrollments.filter(e => e.metadata.status.value === 'Completed').length
 
-  const formatDelay = (days: number, hours: number, minutes: number) => {
-    const parts = []
-    if (days > 0) parts.push(`${days}d`)
-    if (hours > 0) parts.push(`${hours}h`)
-    if (minutes > 0) parts.push(`${minutes}m`)
-    return parts.length > 0 ? parts.join(' ') : 'Immediate'
+  if (isEditing) {
+    return (
+      <EditWorkflowForm 
+        workflow={workflow}
+        onCancel={() => setIsEditing(false)}
+        onSuccess={() => {
+          setIsEditing(false)
+          router.refresh()
+        }}
+      />
+    )
   }
-
-  const activeEnrollments = enrollments.filter(e => e.metadata.status.value === 'Active')
-  const completedEnrollments = enrollments.filter(e => e.metadata.status.value === 'Completed')
 
   return (
-    <>
-      <div className="space-y-6">
-        {/* Header */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold text-gray-900">{workflow.metadata.name}</h1>
-                <Badge className={getStatusColor(workflow.metadata.status.value)}>
-                  {workflow.metadata.status.value}
-                </Badge>
-              </div>
-              
-              <div className="flex items-center gap-4 text-sm text-gray-600">
-                <Badge variant="outline" className={getTriggerTypeColor(workflow.metadata.trigger_type.value)}>
-                  {workflow.metadata.trigger_type.value}
-                </Badge>
-                <span className="flex items-center gap-1">
-                  <Mail className="w-4 h-4" />
-                  {workflow.metadata.steps.length} steps
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users className="w-4 h-4" />
-                  {enrollments.length} enrolled
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  Created <TimeAgo date={workflow.created_at} />
-                </span>
-              </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">{workflow.metadata.name}</h1>
+          <p className="text-gray-600 mt-2">{workflow.metadata.description || 'No description provided'}</p>
+          <div className="flex items-center space-x-4 mt-4">
+            <Badge className={getStatusColor(workflow.metadata.status.value)}>
+              {workflow.metadata.status.value}
+            </Badge>
+            <Badge variant="outline">
+              {workflow.metadata.trigger_type.value}
+            </Badge>
+          </div>
+        </div>
+        
+        <div className="flex space-x-2">
+          {workflow.metadata.status.value === 'Draft' && (
+            <Button 
+              onClick={() => handleStatusChange('Active')}
+              disabled={actionLoading === 'status'}
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Activate
+            </Button>
+          )}
+          
+          {workflow.metadata.status.value === 'Active' && (
+            <Button 
+              variant="outline"
+              onClick={() => handleStatusChange('Paused')}
+              disabled={actionLoading === 'status'}
+            >
+              <Pause className="w-4 h-4 mr-2" />
+              Pause
+            </Button>
+          )}
 
-              {workflow.metadata.description && (
-                <p className="text-gray-600 mt-2">{workflow.metadata.description}</p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEnrollmentModal(true)}
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Enroll Contacts
-              </Button>
-              
-              <Button
-                variant={workflow.metadata.status.value === 'Active' ? 'destructive' : 'default'}
-                size="sm"
-                onClick={handleStatusToggle}
-                disabled={actionLoading}
-              >
-                {actionLoading ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : workflow.metadata.status.value === 'Active' ? (
-                  <>
-                    <Pause className="w-4 h-4 mr-2" />
-                    Pause
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    {workflow.metadata.status.value === 'Draft' ? 'Activate' : 'Resume'}
-                  </>
-                )}
-              </Button>
-
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/workflows/${workflow.id}/edit`}>
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </Link>
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDuplicate}
-                disabled={actionLoading}
-              >
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDeleteModal(true)}
+          {workflow.metadata.trigger_type.value === 'Manual' && workflow.metadata.status.value === 'Active' && (
+            <Button onClick={() => setShowEnrollment(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Enroll Contacts
+            </Button>
+          )}
+          
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
+            <Edit className="w-4 h-4 mr-2" />
+            Edit
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            onClick={handleDuplicate}
+            disabled={actionLoading === 'duplicate'}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Duplicate
+          </Button>
+          
+          <ConfirmationModal
+            title="Delete Workflow"
+            description={`Are you sure you want to delete "${workflow.metadata.name}"? This action cannot be undone and will remove all enrollments.`}
+            onConfirm={handleDelete}
+            trigger={
+              <Button 
+                variant="outline" 
                 className="text-red-600 hover:text-red-700"
-                disabled={actionLoading}
+                disabled={actionLoading === 'delete'}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
               </Button>
-            </div>
-          </CardHeader>
-        </Card>
-
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Enrolled</p>
-                  <p className="text-3xl font-bold text-blue-600">{enrollments.length}</p>
-                </div>
-                <Users className="w-8 h-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active</p>
-                  <p className="text-3xl font-bold text-orange-600">{activeEnrollments.length}</p>
-                </div>
-                <Play className="w-8 h-8 text-orange-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Completed</p>
-                  <p className="text-3xl font-bold text-green-600">{completedEnrollments.length}</p>
-                </div>
-                <CheckCircle className="w-8 h-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Completion Rate</p>
-                  <p className="text-3xl font-bold text-purple-600">
-                    {enrollments.length > 0 
-                      ? Math.round((completedEnrollments.length / enrollments.length) * 100)
-                      : 0}%
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-purple-600" />
-              </div>
-            </CardContent>
-          </Card>
+            }
+          />
         </div>
-
-        {/* Main Content */}
-        <Tabs defaultValue="steps" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="steps">Steps</TabsTrigger>
-            <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="steps">
-            <Card>
-              <CardHeader>
-                <CardTitle>Workflow Steps</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {workflow.metadata.steps.map((step, index) => (
-                  <div key={step.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                    <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full font-medium">
-                      {step.step_number}
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium">Step {step.step_number}</span>
-                        <Badge variant={step.active ? "default" : "secondary"} className="text-xs">
-                          {step.active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        Template ID: {step.template_id}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Delay: {formatDelay(step.delay_days, step.delay_hours, step.delay_minutes)}
-                      </p>
-                    </div>
-
-                    {index < workflow.metadata.steps.length - 1 && (
-                      <ArrowRight className="w-4 h-4 text-gray-400" />
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="enrollments">
-            <Card>
-              <CardHeader>
-                <CardTitle>Contact Enrollments</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {enrollments.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Users className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No enrollments yet</h3>
-                    <p className="text-gray-600 mb-4">Start by enrolling contacts into this workflow</p>
-                    <Button onClick={() => setEnrollmentModal(true)}>
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Enroll Contacts
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {enrollments.map((enrollment) => (
-                      <div key={enrollment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                          <div>
-                            <p className="font-medium">Contact ID: {enrollment.metadata.contact_id}</p>
-                            <p className="text-sm text-gray-600">
-                              Step {enrollment.metadata.current_step} • Enrolled <TimeAgo date={enrollment.metadata.enrolled_date} />
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={getEnrollmentStatusColor(enrollment.metadata.status.value)}>
-                            {enrollment.metadata.status.value}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="settings">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="w-5 h-5" />
-                  Workflow Settings
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Trigger Configuration</h4>
-                  <div className="p-3 bg-gray-50 rounded-lg space-y-2">
-                    <p className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">Type:</span>
-                      <Badge variant="outline" className={getTriggerTypeColor(workflow.metadata.trigger_type.value)}>
-                        {workflow.metadata.trigger_type.value}
-                      </Badge>
-                    </p>
-
-                    {workflow.metadata.trigger_type.value === 'List Subscribe' && workflow.metadata.trigger_lists && (
-                      <p className="text-sm">
-                        <span className="font-medium">Lists:</span> {workflow.metadata.trigger_lists.length} selected
-                      </p>
-                    )}
-
-                    {workflow.metadata.trigger_type.value === 'Tag Added' && workflow.metadata.trigger_tags && (
-                      <div className="text-sm">
-                        <span className="font-medium">Tags:</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {workflow.metadata.trigger_tags.map(tag => (
-                            <Badge key={tag} variant="outline" className="text-xs">
-                              <Tag className="w-3 h-3 mr-1" />
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {workflow.metadata.trigger_type.value === 'Date Based' && workflow.metadata.trigger_date && (
-                      <p className="flex items-center gap-2 text-sm">
-                        <Calendar className="w-4 h-4" />
-                        <span className="font-medium">Date:</span>
-                        {workflow.metadata.trigger_date}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Workflow Information</h4>
-                  <div className="p-3 bg-gray-50 rounded-lg space-y-2">
-                    <p className="text-sm">
-                      <span className="font-medium">Created:</span> {new Date(workflow.created_at).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Last Modified:</span> {new Date(workflow.metadata.last_modified).toLocaleDateString()}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Steps:</span> {workflow.metadata.steps.length}
-                    </p>
-                    <p className="text-sm">
-                      <span className="font-medium">Active Steps:</span> {workflow.metadata.steps.filter(s => s.active).length}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
       </div>
 
-      <ContactEnrollmentModal
-        isOpen={enrollmentModal}
-        onClose={() => setEnrollmentModal(false)}
-        workflowId={workflow.id}
-        workflowName={workflow.metadata.name}
-      />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Enrolled</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{workflow.metadata.stats?.total_enrolled || 0}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeEnrollments}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{completedEnrollments}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Emails Sent</CardTitle>
+            <Mail className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{workflow.metadata.stats?.total_emails_sent || 0}</div>
+          </CardContent>
+        </Card>
+      </div>
 
-      <ConfirmationModal
-        isOpen={deleteModal}
-        onClose={() => setDeleteModal(false)}
-        onConfirm={handleDelete}
-        title="Delete Workflow"
-        message={`Are you sure you want to delete "${workflow.metadata.name}"? This will also remove all enrollments and cannot be undone.`}
-        confirmButtonText="Delete Workflow"
-        isDestructive={true}
-        isLoading={actionLoading}
-      />
-    </>
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="steps">Steps ({workflow.metadata.steps.length})</TabsTrigger>
+          <TabsTrigger value="enrollments">Enrollments ({enrollments.length})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Workflow Configuration</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Trigger</h4>
+                <p className="text-gray-600">{getTriggerDescription()}</p>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Steps</h4>
+                <p className="text-gray-600">
+                  {workflow.metadata.steps.length} email{workflow.metadata.steps.length !== 1 ? 's' : ''} configured
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Status</h4>
+                <p className="text-gray-600">
+                  {workflow.metadata.status.value === 'Active' && 'Workflow is active and processing enrollments'}
+                  {workflow.metadata.status.value === 'Draft' && 'Workflow is in draft mode and not processing enrollments'}
+                  {workflow.metadata.status.value === 'Paused' && 'Workflow is paused and not processing new enrollments'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="steps" className="space-y-6">
+          <div className="space-y-4">
+            {workflow.metadata.steps.map((step, index) => (
+              <Card key={step.id}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-sm font-semibold">
+                          {step.step_number}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          Step {step.step_number}
+                        </h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Template: {step.template?.title || `Template ID: ${step.template_id}`}
+                        </p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Delay: {formatDelay(step.delay_days, step.delay_hours, step.delay_minutes)}
+                          {index === 0 && ' (after enrollment)'}
+                          {index > 0 && ' (after previous step)'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant={step.active ? "default" : "secondary"}>
+                        {step.active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="enrollments" className="space-y-6">
+          {enrollments.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-12">
+                  <Users className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-4 text-lg font-medium text-gray-900">No enrollments yet</h3>
+                  <p className="mt-2 text-gray-600">
+                    {workflow.metadata.trigger_type.value === 'Manual' 
+                      ? 'Use the "Enroll Contacts" button to manually add contacts to this workflow.'
+                      : 'Contacts will be automatically enrolled when they meet the trigger criteria.'
+                    }
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {enrollments.map((enrollment) => (
+                <Card key={enrollment.id}>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                            <Users className="w-5 h-5 text-gray-600" />
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900">
+                            Contact ID: {enrollment.metadata.contact_id}
+                          </h4>
+                          <p className="text-sm text-gray-600">
+                            Current Step: {enrollment.metadata.current_step} of {workflow.metadata.steps.length}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enrolled: {new Date(enrollment.metadata.enrolled_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge className={getStatusColor(enrollment.metadata.status.value)}>
+                          {enrollment.metadata.status.value}
+                        </Badge>
+                        {enrollment.metadata.next_send_date && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Next: {new Date(enrollment.metadata.next_send_date).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Contact Enrollment Modal */}
+      {showEnrollment && (
+        <ContactEnrollmentModal
+          workflow={workflow}
+          onClose={() => setShowEnrollment(false)}
+          onEnrollmentComplete={() => {
+            setShowEnrollment(false)
+            router.refresh()
+          }}
+        />
+      )}
+    </div>
   )
 }
