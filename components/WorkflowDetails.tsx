@@ -5,56 +5,29 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { 
+  Edit, 
+  Trash2, 
+  Copy, 
   Play, 
   Pause, 
-  Edit, 
-  Copy, 
-  Trash2, 
-  Users, 
-  Mail, 
   Clock, 
+  Mail, 
+  Users, 
   TrendingUp,
   Calendar,
   Tag,
-  List as ListIcon,
-  ArrowRight,
-  UserPlus,
-  Settings,
-  BarChart3
+  List,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  UserPlus
 } from 'lucide-react'
 import { EmailWorkflow, EmailTemplate, WorkflowEnrollment } from '@/types'
 import ConfirmationModal from '@/components/ConfirmationModal'
-import EditWorkflowForm from '@/components/EditWorkflowForm'
-import { ContactEnrollmentModalProps } from '@/components/ContactEnrollmentModal'
+import ContactEnrollmentModal from '@/components/ContactEnrollmentModal'
 import TimeAgo from '@/components/TimeAgo'
-
-// Create a simple ContactEnrollmentModal component since the import is missing
-function ContactEnrollmentModal({ 
-  workflow, 
-  onClose 
-}: { 
-  workflow: EmailWorkflow; 
-  onClose: () => void; 
-}) {
-  return (
-    <Dialog open={true} onOpenChange={() => onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Enroll Contacts</DialogTitle>
-        </DialogHeader>
-        <div className="p-4">
-          <p>Contact enrollment functionality will be implemented here.</p>
-          <Button onClick={onClose} className="mt-4">
-            Close
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 interface WorkflowDetailsProps {
   workflow: EmailWorkflow
@@ -72,95 +45,8 @@ export default function WorkflowDetails({
   onDelete 
 }: WorkflowDetailsProps) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState('overview')
-  const [showEditForm, setShowEditForm] = useState(false)
-  const [showEnrollModal, setShowEnrollModal] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
-  const [isDuplicating, setIsDuplicating] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  // Calculate workflow statistics
-  const stats = {
-    totalEnrolled: enrollments.length,
-    activeEnrollments: enrollments.filter(e => e.metadata.status.value === 'Active').length,
-    completedEnrollments: enrollments.filter(e => e.metadata.status.value === 'Completed').length,
-    failedEnrollments: enrollments.filter(e => e.metadata.status.value === 'Failed').length,
-    completionRate: enrollments.length > 0 
-      ? Math.round((enrollments.filter(e => e.metadata.status.value === 'Completed').length / enrollments.length) * 100)
-      : 0
-  }
-
-  const handleStatusToggle = async () => {
-    if (isUpdating) return
-    
-    const newStatus = workflow.metadata.status.value === 'Active' ? 'Paused' : 'Active'
-    
-    setIsUpdating(true)
-    try {
-      const response = await fetch(`/api/workflows/${workflow.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to update workflow status')
-      }
-
-      onUpdate()
-    } catch (error) {
-      console.error('Error updating workflow:', error)
-      alert('Failed to update workflow status')
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-
-  const handleDuplicate = async () => {
-    if (isDuplicating) return
-    
-    setIsDuplicating(true)
-    try {
-      const response = await fetch(`/api/workflows/${workflow.id}/duplicate`, {
-        method: 'POST',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to duplicate workflow')
-      }
-
-      const result = await response.json()
-      router.push(`/workflows/${result.data.id}`)
-    } catch (error) {
-      console.error('Error duplicating workflow:', error)
-      alert('Failed to duplicate workflow')
-    } finally {
-      setIsDuplicating(false)
-    }
-  }
-
-  const handleDelete = async () => {
-    if (isDeleting) return
-    
-    setIsDeleting(true)
-    try {
-      const response = await fetch(`/api/workflows/${workflow.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to delete workflow')
-      }
-
-      onDelete()
-      router.push('/workflows')
-    } catch (error) {
-      console.error('Error deleting workflow:', error)
-      alert('Failed to delete workflow')
-    } finally {
-      setIsDeleting(false)
-    }
-  }
+  const [isLoading, setIsLoading] = useState(false)
+  const [showEnrollmentModal, setShowEnrollmentModal] = useState(false)
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -177,127 +63,195 @@ export default function WorkflowDetails({
     }
   }
 
+  const getTriggerIcon = (triggerType: string) => {
+    switch (triggerType) {
+      case 'Manual':
+        return <UserPlus className="w-4 h-4" />
+      case 'List Subscribe':
+        return <List className="w-4 h-4" />
+      case 'Tag Added':
+        return <Tag className="w-4 h-4" />
+      case 'Date Based':
+        return <Calendar className="w-4 h-4" />
+      default:
+        return <Play className="w-4 h-4" />
+    }
+  }
+
+  const formatDelay = (step: any) => {
+    const parts = []
+    if (step.delay_days > 0) parts.push(`${step.delay_days}d`)
+    if (step.delay_hours > 0) parts.push(`${step.delay_hours}h`)  
+    if (step.delay_minutes > 0) parts.push(`${step.delay_minutes}m`)
+    return parts.join(' ') || '0m'
+  }
+
   const getTemplateName = (templateId: string) => {
     const template = templates.find(t => t.id === templateId)
-    return template ? template.metadata.name : 'Unknown Template'
+    return template?.metadata.name || 'Unknown Template'
   }
 
-  const calculateTotalDelay = (step: any) => {
-    const totalMinutes = (step.delay_days * 24 * 60) + (step.delay_hours * 60) + step.delay_minutes
-    
-    if (totalMinutes === 0) return 'Immediately'
-    
-    const days = Math.floor(totalMinutes / (24 * 60))
-    const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
-    const minutes = totalMinutes % 60
-    
-    const parts = []
-    if (days > 0) parts.push(`${days}d`)
-    if (hours > 0) parts.push(`${hours}h`)
-    if (minutes > 0) parts.push(`${minutes}m`)
-    
-    return parts.join(' ')
+  const getTemplateSubject = (templateId: string) => {
+    const template = templates.find(t => t.id === templateId)
+    return template?.metadata.subject || ''
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    })
+  const handleStatusToggle = async () => {
+    setIsLoading(true)
+    try {
+      const newStatus = workflow.metadata.status.value === 'Active' ? 'Paused' : 'Active'
+      
+      const response = await fetch(`/api/workflows/${workflow.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update workflow status')
+      }
+
+      router.refresh()
+      onUpdate()
+    } catch (error) {
+      console.error('Error updating workflow status:', error)
+      alert('Failed to update workflow status')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  if (showEditForm) {
-    return (
-      <EditWorkflowForm 
-        workflow={workflow} 
-        templates={templates}
-      />
-    )
+  const handleDuplicate = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/workflows/${workflow.id}/duplicate`, {
+        method: 'POST'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to duplicate workflow')
+      }
+
+      const result = await response.json()
+      router.push(`/workflows/${result.data.id}`)
+    } catch (error) {
+      console.error('Error duplicating workflow:', error)
+      alert('Failed to duplicate workflow')
+    } finally {
+      setIsLoading(false)
+    }
   }
+
+  const handleDelete = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/workflows/${workflow.id}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete workflow')
+      }
+
+      router.push('/workflows')
+      onDelete()
+    } catch (error) {
+      console.error('Error deleting workflow:', error)
+      alert('Failed to delete workflow')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const activeEnrollments = enrollments.filter(e => e.metadata.status.value === 'Active')
+  const completedEnrollments = enrollments.filter(e => e.metadata.status.value === 'Completed')
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">
-              {workflow.metadata.name}
-            </h1>
-            <Badge className={getStatusColor(workflow.metadata.status.value)}>
-              {workflow.metadata.status.value}
-            </Badge>
-          </div>
-          {workflow.metadata.description && (
-            <p className="text-gray-600 max-w-2xl">
-              {workflow.metadata.description}
-            </p>
-          )}
-          <div className="flex items-center gap-4 text-sm text-gray-500 mt-2">
-            <span>Created {formatDate(workflow.created_at)}</span>
-            <span>•</span>
-            <span>Last modified <TimeAgo date={workflow.metadata.last_modified} /></span>
-            <span>•</span>
-            <span>{workflow.metadata.steps.length} steps</span>
+      {/* Header Actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <Badge className={getStatusColor(workflow.metadata.status.value)}>
+            {workflow.metadata.status.value}
+          </Badge>
+          <div className="flex items-center space-x-2 text-gray-600">
+            {getTriggerIcon(workflow.metadata.trigger_type.value)}
+            <span className="text-sm">{workflow.metadata.trigger_type.value}</span>
           </div>
         </div>
-        
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center space-x-2">
           <Button
             variant="outline"
-            onClick={() => setShowEnrollModal(true)}
-            disabled={workflow.metadata.status.value !== 'Active'}
+            size="sm"
+            onClick={() => setShowEnrollmentModal(true)}
+            disabled={isLoading}
           >
             <UserPlus className="w-4 h-4 mr-2" />
-            Enroll Contacts
+            Enroll Contact
           </Button>
           
           <Button
-            variant={workflow.metadata.status.value === 'Active' ? 'outline' : 'default'}
+            variant="outline"
+            size="sm"
             onClick={handleStatusToggle}
-            disabled={isUpdating}
+            disabled={isLoading}
           >
-            {workflow.metadata.status.value === 'Active' ? (
-              <>
-                <Pause className="w-4 h-4 mr-2" />
-                Pause
-              </>
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : workflow.metadata.status.value === 'Active' ? (
+              <Pause className="w-4 h-4 mr-2" />
             ) : (
-              <>
-                <Play className="w-4 h-4 mr-2" />
-                Activate
-              </>
+              <Play className="w-4 h-4 mr-2" />
             )}
+            {workflow.metadata.status.value === 'Active' ? 'Pause' : 'Activate'}
           </Button>
-          
+
           <Button
             variant="outline"
-            onClick={() => setShowEditForm(true)}
-          >
-            <Edit className="w-4 w-4 mr-2" />
-            Edit
-          </Button>
-          
-          <Button
-            variant="outline"
+            size="sm"
             onClick={handleDuplicate}
-            disabled={isDuplicating}
+            disabled={isLoading}
           >
-            <Copy className="w-4 h-4 mr-2" />
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Copy className="w-4 h-4 mr-2" />
+            )}
             Duplicate
           </Button>
-          
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/workflows/${workflow.id}/edit`)}
+            disabled={isLoading}
+          >
+            <Edit className="w-4 h-4 mr-2" />
+            Edit
+          </Button>
+
           <ConfirmationModal
             title="Delete Workflow"
-            description={`Are you sure you want to delete "${workflow.metadata.name}"? This will also remove all enrollments and cannot be undone.`}
+            description={`Are you sure you want to delete "${workflow.metadata.name}"? This action cannot be undone and will remove all enrollments.`}
             onConfirm={handleDelete}
             confirmText="Delete"
             variant="destructive"
-            isLoading={isDeleting}
+            isLoading={isLoading}
+            isOpen={false}
+            onOpenChange={() => {}}
             trigger={
-              <Button variant="outline" className="text-red-600 hover:text-red-700">
-                <Trash2 className="w-4 h-4 mr-2" />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading}
+                className="text-red-600 hover:text-red-700"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
                 Delete
               </Button>
             }
@@ -306,248 +260,216 @@ export default function WorkflowDetails({
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <Users className="w-5 h-5 text-blue-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Total Enrolled</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalEnrolled}</p>
+                <p className="text-sm text-gray-600">Total Enrolled</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {workflow.metadata.stats?.total_enrolled || 0}
+                </p>
               </div>
-              <Users className="h-8 w-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Active</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.activeEnrollments}</p>
+                <p className="text-sm text-gray-600">Completed</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {workflow.metadata.stats?.total_completed || 0}
+                </p>
               </div>
-              <Play className="h-8 w-8 text-green-600" />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="w-5 h-5 text-purple-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.completedEnrollments}</p>
+                <p className="text-sm text-gray-600">Completion Rate</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {workflow.metadata.stats?.completion_rate || '0%'}
+                </p>
               </div>
-              <TrendingUp className="h-8 w-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2">
+              <Mail className="w-5 h-5 text-orange-600" />
               <div>
-                <p className="text-sm font-medium text-gray-600">Completion Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.completionRate}%</p>
+                <p className="text-sm text-gray-600">Emails Sent</p>
+                <p className="text-2xl font-semibold text-gray-900">
+                  {workflow.metadata.stats?.total_emails_sent || 0}
+                </p>
               </div>
-              <BarChart3 className="h-8 w-8 text-purple-600" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Content Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="steps">Steps</TabsTrigger>
-          <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="overview" className="space-y-6">
-          {/* Trigger Settings */}
+      {/* Workflow Details */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Workflow Steps */}
+        <div className="lg:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                Trigger Settings
+              <CardTitle className="flex items-center space-x-2">
+                <Mail className="w-5 h-5" />
+                <span>Workflow Steps ({workflow.metadata.steps.length})</span>
               </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Trigger Type</p>
-                  <p className="text-lg font-semibold">{workflow.metadata.trigger_type.value}</p>
-                </div>
-                
-                {workflow.metadata.trigger_type.value === 'List Subscribe' && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Target Lists</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {workflow.metadata.trigger_lists && workflow.metadata.trigger_lists.length > 0 ? (
-                        workflow.metadata.trigger_lists.map((listId, index) => (
-                          <Badge key={index} variant="outline">
-                            <ListIcon className="w-3 h-3 mr-1" />
-                            List ID: {listId}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-gray-400">No lists configured</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {workflow.metadata.trigger_type.value === 'Tag Added' && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Target Tags</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {workflow.metadata.trigger_tags && workflow.metadata.trigger_tags.length > 0 ? (
-                        workflow.metadata.trigger_tags.map((tag, index) => (
-                          <Badge key={index} variant="outline">
-                            <Tag className="w-3 h-3 mr-1" />
-                            {tag}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-gray-400">No tags configured</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {workflow.metadata.trigger_type.value === 'Date Based' && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Trigger Date</p>
-                    <p className="text-lg font-semibold">
-                      {workflow.metadata.trigger_date ? (
-                        formatDate(workflow.metadata.trigger_date)
-                      ) : (
-                        <span className="text-gray-400">No date set</span>
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="steps" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Workflow Steps ({workflow.metadata.steps.length})</CardTitle>
             </CardHeader>
             <CardContent>
               {workflow.metadata.steps.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Mail className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>No steps configured yet.</p>
+                <div className="text-center py-8">
+                  <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No steps configured</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {workflow.metadata.steps.map((step, index) => (
-                    <div key={step.id} className="border rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-start gap-4">
-                        <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-semibold">
+                    <div key={step.id} className="flex items-start space-x-4 p-4 border rounded-lg">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-sm font-semibold">
                           {step.step_number}
-                        </div>
-                        
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium text-gray-900">
-                              {getTemplateName(step.template_id)}
-                            </h4>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={step.active ? 'default' : 'secondary'}>
-                                {step.active ? 'Active' : 'Inactive'}
-                              </Badge>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-4 h-4" />
-                              <span>Send after: {calculateTotalDelay(step)}</span>
-                            </div>
-                          </div>
                         </div>
                       </div>
                       
-                      {index < workflow.metadata.steps.length - 1 && (
-                        <div className="flex justify-center mt-4">
-                          <ArrowRight className="w-5 h-5 text-gray-400" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-gray-900">
+                            {getTemplateName(step.template_id)}
+                          </h4>
+                          <div className="flex items-center space-x-2">
+                            <Badge variant={step.active ? "default" : "secondary"}>
+                              {step.active ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </div>
                         </div>
-                      )}
+                        
+                        {getTemplateSubject(step.template_id) && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            Subject: {getTemplateSubject(step.template_id)}
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+                          <div className="flex items-center space-x-1">
+                            <Clock className="w-3 h-3" />
+                            <span>Delay: {formatDelay(step)}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-        
-        <TabsContent value="enrollments" className="space-y-6">
+        </div>
+
+        {/* Sidebar Info */}
+        <div className="space-y-4">
+          {/* Workflow Info */}
           <Card>
             <CardHeader>
-              <CardTitle>Active Enrollments ({enrollments.length})</CardTitle>
+              <CardTitle>Workflow Info</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="text-sm text-gray-600">Created</p>
+                <p className="text-sm font-medium">
+                  <TimeAgo date={workflow.created_at} />
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-600">Last Modified</p>
+                <p className="text-sm font-medium">
+                  <TimeAgo date={workflow.metadata.last_modified} />
+                </p>
+              </div>
+
+              {workflow.metadata.description && (
+                <div>
+                  <p className="text-sm text-gray-600">Description</p>
+                  <p className="text-sm">{workflow.metadata.description}</p>
+                </div>
+              )}
+
+              {workflow.metadata.trigger_date && (
+                <div>
+                  <p className="text-sm text-gray-600">Trigger Date</p>
+                  <p className="text-sm font-medium">
+                    {new Date(workflow.metadata.trigger_date).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Enrollments */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Recent Enrollments</span>
+                <Badge variant="outline">{enrollments.length}</Badge>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {enrollments.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>No contacts enrolled yet.</p>
+                <div className="text-center py-4">
+                  <Users className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">No enrollments yet</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {enrollments.slice(0, 10).map((enrollment) => (
-                    <div key={enrollment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                          <Users className="w-4 h-4 text-gray-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Contact ID: {enrollment.metadata.contact_id}</p>
-                          <p className="text-sm text-gray-600">
-                            Step {enrollment.metadata.current_step} • {enrollment.metadata.status.value}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">
-                          Enrolled {formatDate(enrollment.metadata.enrolled_date)}
+                <div className="space-y-3">
+                  {enrollments.slice(0, 5).map(enrollment => (
+                    <div key={enrollment.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-medium">{enrollment.title}</p>
+                        <p className="text-xs text-gray-500">
+                          Step {enrollment.metadata.current_step}
                         </p>
-                        {enrollment.metadata.next_send_date && (
-                          <p className="text-xs text-gray-500">
-                            Next: {formatDate(enrollment.metadata.next_send_date)}
-                          </p>
-                        )}
                       </div>
+                      <Badge 
+                        variant={enrollment.metadata.status.value === 'Active' ? 'default' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {enrollment.metadata.status.value}
+                      </Badge>
                     </div>
                   ))}
                   
-                  {enrollments.length > 10 && (
-                    <div className="text-center py-4">
-                      <p className="text-gray-600">
-                        And {enrollments.length - 10} more enrollments...
-                      </p>
-                    </div>
+                  {enrollments.length > 5 && (
+                    <p className="text-xs text-gray-500 text-center pt-2">
+                      And {enrollments.length - 5} more...
+                    </p>
                   )}
                 </div>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
 
       {/* Contact Enrollment Modal */}
-      {showEnrollModal && (
-        <ContactEnrollmentModal 
-          workflow={workflow} 
-          onClose={() => setShowEnrollModal(false)} 
-        />
-      )}
+      <ContactEnrollmentModal
+        isOpen={showEnrollmentModal}
+        onClose={() => setShowEnrollmentModal(false)}
+        workflowId={workflow.id}
+        workflowName={workflow.metadata.name}
+      />
     </div>
   )
 }

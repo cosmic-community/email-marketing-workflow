@@ -1,11 +1,8 @@
 // app/workflows/[id]/page.tsx
-import { getEmailWorkflow, getEmailTemplates } from '@/lib/cosmic'
 import { notFound } from 'next/navigation'
+import { getEmailWorkflow, getEmailTemplates, getWorkflowEnrollments } from '@/lib/cosmic'
 import WorkflowDetails from '@/components/WorkflowDetails'
-
-// Force dynamic rendering to ensure fresh data
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+import { EmailWorkflow, EmailTemplate, WorkflowEnrollment } from '@/types'
 
 interface WorkflowPageProps {
   params: Promise<{ id: string }>
@@ -14,18 +11,44 @@ interface WorkflowPageProps {
 export default async function WorkflowPage({ params }: WorkflowPageProps) {
   const { id } = await params
   
-  const [workflow, templates] = await Promise.all([
+  const [workflow, templates, enrollments] = await Promise.all([
     getEmailWorkflow(id),
-    getEmailTemplates()
+    getEmailTemplates(),
+    getWorkflowEnrollments(id)
   ])
 
   if (!workflow) {
     notFound()
   }
 
+  const handleUpdate = async () => {
+    // This will be handled by the component itself
+  }
+
+  const handleDelete = async () => {
+    // This will be handled by the component itself  
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <WorkflowDetails workflow={workflow} templates={templates} />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {workflow.metadata.name}
+          </h1>
+          <p className="text-gray-600 mt-1">
+            {workflow.metadata.description || 'Email workflow automation'}
+          </p>
+        </div>
+      </div>
+
+      <WorkflowDetails 
+        workflow={workflow} 
+        templates={templates}
+        enrollments={enrollments}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+      />
     </div>
   )
 }
