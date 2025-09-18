@@ -1,29 +1,28 @@
 // app/workflows/[id]/page.tsx
 import { notFound } from 'next/navigation'
+import { getEmailWorkflow, getEmailTemplates } from '@/lib/cosmic'
 import WorkflowDetails from '@/components/WorkflowDetails'
-import { getEmailWorkflow } from '@/lib/cosmic'
 
-interface PageProps {
+interface WorkflowPageProps {
   params: Promise<{ id: string }>
 }
 
-export default async function WorkflowPage({ params }: PageProps) {
+export default async function WorkflowPage({ params }: WorkflowPageProps) {
+  // IMPORTANT: In Next.js 15+, params are now Promises and MUST be awaited
   const { id } = await params
   
-  try {
-    const workflow = await getEmailWorkflow(id)
-    
-    if (!workflow) {
-      notFound()
-    }
+  const [workflow, templates] = await Promise.all([
+    getEmailWorkflow(id),
+    getEmailTemplates()
+  ])
 
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <WorkflowDetails workflow={workflow} />
-      </div>
-    )
-  } catch (error) {
-    console.error('Error loading workflow:', error)
+  if (!workflow) {
     notFound()
   }
+
+  return (
+    <div className="container mx-auto py-8">
+      <WorkflowDetails workflow={workflow} templates={templates} />
+    </div>
+  )
 }
