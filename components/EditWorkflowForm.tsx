@@ -7,20 +7,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { Plus, Trash2, GripVertical, Clock, Mail, Loader2, Save, X, ArrowLeft } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Trash2, Plus, GripVertical, Loader2 } from 'lucide-react'
 import { EmailWorkflow, EmailTemplate, CreateWorkflowStepData } from '@/types'
+
+interface WorkflowStepFormData extends CreateWorkflowStepData {
+  id?: string;
+  template?: EmailTemplate;
+}
 
 interface EditWorkflowFormProps {
   workflow: EmailWorkflow
   templates: EmailTemplate[]
-}
-
-interface WorkflowStepFormData extends CreateWorkflowStepData {
-  id?: string
 }
 
 export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFormProps) {
@@ -29,13 +28,12 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
   const [formData, setFormData] = useState({
     name: workflow.metadata.name,
     description: workflow.metadata.description || '',
-    status: workflow.metadata.status.value,
-    trigger_type: workflow.metadata.trigger_type.value,
+    trigger_type: workflow.metadata.trigger_type.value as 'Manual' | 'List Subscribe' | 'Tag Added' | 'Date Based',
     trigger_lists: workflow.metadata.trigger_lists || [],
     trigger_tags: workflow.metadata.trigger_tags || [],
-    trigger_date: workflow.metadata.trigger_date || ''
+    trigger_date: workflow.metadata.trigger_date || '',
   })
-  
+
   const [steps, setSteps] = useState<WorkflowStepFormData[]>(
     workflow.metadata.steps.map(step => ({
       id: step.id,
@@ -43,40 +41,58 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
       delay_days: step.delay_days,
       delay_hours: step.delay_hours,
       delay_minutes: step.delay_minutes,
-      active: step.active
+      active: step.active,
+      template: templates.find(t => t.id === step.template_id)
     }))
   )
-
-  const handleInputChange = (field: string, value: string | string[]) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
 
   const addStep = () => {
     const newStep: WorkflowStepFormData = {
       template_id: '',
-      delay_days: 1,
+      delay_days: 0,
       delay_hours: 0,
       delay_minutes: 0,
-      active: true
+      active: true,
     }
     setSteps([...steps, newStep])
+  }
+
+  const updateStep = (index: number, field: keyof WorkflowStepFormData, value: any) => {
+    const updatedSteps = [...steps]
+    const currentStep = updatedSteps[index]
+    
+    // Add null check to prevent TypeScript error
+    if (!currentStep) {
+      return
+    }
+    
+    // Type-safe update with explicit checks
+    if (field === 'template_id' && typeof value === 'string') {
+      const updatedStep = { ...currentStep, template_id: value }
+      updatedStep.template = templates.find(t => t.id === value)
+      updatedSteps[index] = updatedStep
+    } else if (field === 'delay_days' && typeof value === 'number') {
+      updatedSteps[index] = { ...currentStep, delay_days: value }
+    } else if (field === 'delay_hours' && typeof value === 'number') {
+      updatedSteps[index] = { ...currentStep, delay_hours: value }
+    } else if (field === 'delay_minutes' && typeof value === 'number') {
+      updatedSteps[index] = { ...currentStep, delay_minutes: value }
+    } else if (field === 'active' && typeof value === 'boolean') {
+      updatedSteps[index] = { ...currentStep, active: value }
+    }
+    
+    setSteps(updatedSteps)
   }
 
   const removeStep = (index: number) => {
     setSteps(steps.filter((_, i) => i !== index))
   }
 
-  const updateStep = (index: number, field: keyof WorkflowStepFormData, value: string | number | boolean) => {
-    setSteps(steps.map((step, i) => 
-      i === index ? { ...step, [field]: value } : step
-    ))
-  }
-
   const moveStep = (index: number, direction: 'up' | 'down') => {
     const newSteps = [...steps]
     const targetIndex = direction === 'up' ? index - 1 : index + 1
     
-    if (targetIndex >= 0 && targetIndex < steps.length) {
+    if (targetIndex >= 0 && targetIndex < newSteps.length) {
       [newSteps[index], newSteps[targetIndex]] = [newSteps[targetIndex], newSteps[index]]
       setSteps(newSteps)
     }
@@ -85,19 +101,16 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Validate steps
     if (steps.length === 0) {
-      alert('Please add at least one step to the workflow')
+      alert('Please add at least one workflow step')
       return
     }
 
-    // Validate that all steps have templates selected
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i]
-      if (!step || !step.template_id) {
-        alert(`Please select a template for step ${i + 1}`)
-        return
-      }
+    // Validate all steps have templates selected
+    const invalidSteps = steps.filter(step => !step.template_id)
+    if (invalidSteps.length > 0) {
+      alert('Please select templates for all workflow steps')
+      return
     }
 
     setIsSubmitting(true)
@@ -108,7 +121,7 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          steps: steps.map(({ id, ...stepData }) => stepData) // Remove id from steps for update
+          steps: steps.map(({ id, template, ...step }) => step) // Remove id and template from submission
         })
       })
 
@@ -117,7 +130,7 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
         throw new Error(error.error || 'Failed to update workflow')
       }
 
-      router.push(`/workflows/${workflow.id}`)
+      router.push('/workflows')
       router.refresh()
     } catch (error) {
       console.error('Error updating workflow:', error)
@@ -127,62 +140,27 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
     }
   }
 
-  const handleCancel = () => {
-    router.push(`/workflows/${workflow.id}`)
-  }
-
-  const formatDelay = (step: WorkflowStepFormData) => {
-    const parts = []
-    if (step.delay_days > 0) parts.push(`${step.delay_days}d`)
-    if (step.delay_hours > 0) parts.push(`${step.delay_hours}h`)
-    if (step.delay_minutes > 0) parts.push(`${step.delay_minutes}m`)
-    return parts.join(' ') || '0m'
-  }
-
-  const getTemplateName = (templateId: string) => {
-    const template = templates.find(t => t.id === templateId)
-    return template?.metadata.name || 'Select template...'
+  const handleInputChange = (field: string, value: string | string[]) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Info */}
       <Card>
         <CardHeader>
-          <CardTitle>Workflow Details</CardTitle>
+          <CardTitle>Workflow Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Workflow Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="e.g., Welcome Series, Onboarding Flow"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select 
-                value={formData.status} 
-                onValueChange={(value) => handleInputChange('status', value)}
-                disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Paused">Paused</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="name">Workflow Name *</Label>
+            <Input
+              id="name"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              placeholder="e.g., Welcome Series, Onboarding Flow"
+              required
+              disabled={isSubmitting}
+            />
           </div>
 
           <div className="space-y-2">
@@ -196,15 +174,7 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
               disabled={isSubmitting}
             />
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Trigger Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Trigger Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="trigger_type">Trigger Type</Label>
             <Select 
@@ -239,198 +209,180 @@ export default function EditWorkflowForm({ workflow, templates }: EditWorkflowFo
         </CardContent>
       </Card>
 
-      {/* Workflow Steps */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between items-center">
             <CardTitle>Workflow Steps</CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <Button 
+              type="button" 
               onClick={addStep}
               disabled={isSubmitting}
+              size="sm"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Step
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {steps.length === 0 ? (
-            <div className="text-center py-12">
-              <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No steps yet</h3>
-              <p className="text-gray-600 mb-4">
-                Add your first email step to get started
-              </p>
-              <Button
-                type="button"
-                variant="outline"
+            <div className="text-center py-8 text-gray-500">
+              <p className="mb-4">No workflow steps added yet</p>
+              <Button 
+                type="button" 
                 onClick={addStep}
                 disabled={isSubmitting}
+                variant="outline"
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Add First Step
+                Add Your First Step
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {steps.map((step, index) => {
-                // Add null checks for step
-                if (!step) {
-                  return null
-                }
-
-                return (
-                  <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center space-x-3">
-                        <Badge variant="outline" className="bg-blue-100 text-blue-800">
-                          Step {index + 1}
-                        </Badge>
-                        <div className="flex items-center space-x-1">
-                          <Clock className="w-4 h-4 text-gray-500" />
-                          <span className="text-sm text-gray-600">
-                            Delay: {formatDelay(step)}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Switch
-                            checked={step.active}
-                            onCheckedChange={(checked) => updateStep(index, 'active', checked)}
-                            disabled={isSubmitting}
-                          />
-                          <span className="text-sm text-gray-600">
-                            {step.active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
+            steps.map((step, index) => (
+              <Card key={index} className="relative">
+                <CardContent className="pt-6">
+                  <div className="flex items-start space-x-4">
+                    <div className="flex flex-col items-center space-y-2 mt-1">
+                      <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 rounded-full text-sm font-semibold">
+                        {index + 1}
                       </div>
-
-                      <div className="flex items-center space-x-2">
-                        <div className="flex flex-col space-y-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => moveStep(index, 'up')}
-                            disabled={index === 0 || isSubmitting}
-                          >
-                            <GripVertical className="w-4 h-4" />
-                          </Button>
-                        </div>
+                      <div className="flex flex-col space-y-1">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => removeStep(index)}
-                          disabled={isSubmitting}
-                          className="text-red-600 hover:text-red-700"
+                          onClick={() => moveStep(index, 'up')}
+                          disabled={index === 0 || isSubmitting}
+                          className="p-1 h-6 w-6"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <GripVertical className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveStep(index, 'down')}
+                          disabled={index === steps.length - 1 || isSubmitting}
+                          className="p-1 h-6 w-6"
+                        >
+                          <GripVertical className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2 md:col-span-2">
+                    <div className="flex-1 space-y-4">
+                      <div>
                         <Label>Email Template *</Label>
                         <Select
                           value={step.template_id}
                           onValueChange={(value) => updateStep(index, 'template_id', value)}
                           disabled={isSubmitting}
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select template...">
-                              {getTemplateName(step.template_id)}
-                            </SelectValue>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a template..." />
                           </SelectTrigger>
                           <SelectContent>
                             {templates.map(template => (
                               <SelectItem key={template.id} value={template.id}>
-                                <div className="flex items-center space-x-2">
-                                  <span>{template.metadata.name}</span>
-                                  <Badge variant="secondary" className="text-xs">
-                                    {template.metadata.template_type.value}
-                                  </Badge>
-                                </div>
+                                {template.metadata.name} ({template.metadata.template_type.value})
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
+                        {step.template && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Subject: {step.template.metadata.subject}
+                          </p>
+                        )}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>Delay Days</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={step.delay_days}
-                          onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
-                          disabled={isSubmitting}
-                        />
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Label>Delay Days</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={step.delay_days}
+                            onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                        <div>
+                          <Label>Delay Hours</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={step.delay_hours}
+                            onChange={(e) => updateStep(index, 'delay_hours', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                        <div>
+                          <Label>Delay Minutes</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={step.delay_minutes}
+                            onChange={(e) => updateStep(index, 'delay_minutes', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting}
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>Delay Hours</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="23"
-                          value={step.delay_hours}
-                          onChange={(e) => updateStep(index, 'delay_hours', parseInt(e.target.value) || 0)}
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          checked={step.active}
+                          onCheckedChange={(checked) => updateStep(index, 'active', checked)}
                           disabled={isSubmitting}
                         />
+                        <Label>Step Active</Label>
                       </div>
                     </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeStep(index)}
+                      disabled={isSubmitting}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                )
-              })}
-            </div>
+                </CardContent>
+              </Card>
+            ))
           )}
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-between pt-6 border-t">
+      <div className="flex justify-between">
         <Button
           type="button"
           variant="outline"
-          onClick={handleCancel}
+          onClick={() => router.back()}
           disabled={isSubmitting}
         >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Workflow
+          Cancel
         </Button>
-
-        <div className="flex items-center space-x-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleCancel}
-            disabled={isSubmitting}
-          >
-            <X className="w-4 h-4 mr-2" />
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={isSubmitting || steps.length === 0 || !formData.name.trim()}
-            className="min-w-[120px]"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Updating...
-              </>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Update Workflow
-              </>
-            )}
-          </Button>
-        </div>
+        <Button
+          type="submit"
+          disabled={isSubmitting || steps.length === 0}
+          className="min-w-[120px]"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Updating...
+            </>
+          ) : (
+            'Update Workflow'
+          )}
+        </Button>
       </div>
     </form>
   )
