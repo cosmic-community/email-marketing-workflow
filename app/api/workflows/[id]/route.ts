@@ -36,7 +36,7 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
     
-    // Validate required fields if provided
+    // Validate required fields
     if (body.name !== undefined && !body.name.trim()) {
       return NextResponse.json(
         { error: 'Workflow name cannot be empty' },
@@ -44,55 +44,36 @@ export async function PUT(
       )
     }
 
-    if (body.steps && (!Array.isArray(body.steps) || body.steps.length === 0)) {
+    if (body.steps && body.steps.length === 0) {
       return NextResponse.json(
         { error: 'At least one workflow step is required' },
         { status: 400 }
       )
     }
 
-    // Validate each step if steps are provided
+    // Validate steps if provided
     if (body.steps) {
-      for (let i = 0; i < body.steps.length; i++) {
-        const step = body.steps[i]
+      for (const step of body.steps) {
         if (!step.template_id) {
           return NextResponse.json(
-            { error: `Step ${i + 1}: Template is required` },
-            { status: 400 }
-          )
-        }
-        if (step.delay_days === undefined && step.delay_hours === undefined && step.delay_minutes === undefined) {
-          return NextResponse.json(
-            { error: `Step ${i + 1}: At least one delay value is required` },
+            { error: 'Each step must have a template selected' },
             { status: 400 }
           )
         }
       }
     }
 
-    // Prepare update data
-    const updateData: any = {}
-
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.description !== undefined) updateData.description = body.description
-    if (body.status !== undefined) updateData.status = body.status
-    if (body.trigger_type !== undefined) updateData.trigger_type = body.trigger_type
-    if (body.trigger_lists !== undefined) updateData.trigger_lists = body.trigger_lists
-    if (body.trigger_tags !== undefined) updateData.trigger_tags = body.trigger_tags
-    if (body.trigger_date !== undefined) updateData.trigger_date = body.trigger_date
-    
-    if (body.steps !== undefined) {
-      updateData.steps = body.steps.map((step: any) => ({
-        template_id: step.template_id,
-        delay_days: step.delay_days || 0,
-        delay_hours: step.delay_hours || 0,
-        delay_minutes: step.delay_minutes || 0,
-        active: step.active !== false,
-      }))
-    }
-
     // Update the workflow
-    const result = await updateEmailWorkflow(id, updateData)
+    const result = await updateEmailWorkflow(id, {
+      name: body.name,
+      description: body.description,
+      trigger_type: body.trigger_type,
+      trigger_lists: body.trigger_lists,
+      trigger_tags: body.trigger_tags,
+      trigger_date: body.trigger_date,
+      steps: body.steps,
+      status: body.status
+    })
 
     // Revalidate relevant pages
     revalidatePath('/workflows')
@@ -102,7 +83,7 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating email workflow:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update email workflow' },
+      { error: 'Failed to update email workflow' },
       { status: 500 }
     )
   }
