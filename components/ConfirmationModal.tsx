@@ -1,77 +1,98 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 export interface ConfirmationModalProps {
   isOpen: boolean
-  onClose: () => void
-  onConfirm: () => void | Promise<void>
+  onOpenChange: (open: boolean) => void
   title: string
-  message: string
-  confirmLabel?: string
-  cancelLabel?: string
+  message?: string
+  description?: string
+  confirmText?: string
+  cancelText?: string
+  onConfirm: () => void | Promise<void>
   isLoading?: boolean
   variant?: 'default' | 'destructive'
+  preventAutoClose?: boolean
+  trigger?: React.ReactElement
 }
 
 export default function ConfirmationModal({
   isOpen,
-  onClose,
-  onConfirm,
+  onOpenChange,
   title,
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  description,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  onConfirm,
   isLoading = false,
-  variant = 'default'
+  variant = 'default',
+  preventAutoClose = false,
+  trigger
 }: ConfirmationModalProps) {
+  const [internalLoading, setInternalLoading] = useState(false)
+
   const handleConfirm = async () => {
     try {
+      setInternalLoading(true)
       await onConfirm()
+      if (!preventAutoClose) {
+        onOpenChange(false)
+      }
     } catch (error) {
       console.error('Error in confirmation action:', error)
+    } finally {
+      setInternalLoading(false)
     }
   }
 
+  const isProcessing = isLoading || internalLoading
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[400px]">
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {variant === 'destructive' && (
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-            )}
-            {title}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         
         <div className="py-4">
-          <p className="text-gray-600">{message}</p>
+          {message && (
+            <p className="text-sm text-gray-600 mb-4">
+              {message}
+            </p>
+          )}
+          {description && (
+            <p className="text-sm text-gray-600">
+              {description}
+            </p>
+          )}
         </div>
 
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={onClose}
-            disabled={isLoading}
+            onClick={() => onOpenChange(false)}
+            disabled={isProcessing}
           >
-            {cancelLabel}
+            {cancelText}
           </Button>
           <Button
-            variant={variant === 'destructive' ? 'destructive' : 'default'}
+            variant={variant}
             onClick={handleConfirm}
-            disabled={isLoading}
+            disabled={isProcessing}
             className="min-w-[80px]"
           >
-            {isLoading ? (
+            {isProcessing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
+                Processing...
               </>
             ) : (
-              confirmLabel
+              confirmText
             )}
           </Button>
         </DialogFooter>
