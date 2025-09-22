@@ -12,11 +12,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Set authentication cookie
+    // Set authentication cookie with the correct name that middleware expects
     const response = NextResponse.json({ success: true })
     
-    // Set httpOnly cookie that expires in 24 hours
-    response.cookies.set('auth-token', 'authenticated', {
+    // Set httpOnly cookie that expires in 24 hours - use the same name as middleware
+    response.cookies.set('email-marketing-auth', 'authenticated', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
