@@ -9,24 +9,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import { Plus, Trash2, Clock, Mail, Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, Plus, X, Clock, Mail } from 'lucide-react'
 import { EmailWorkflow, EmailTemplate, EmailList, CreateWorkflowStepData } from '@/types'
 
-interface EditWorkflowFormProps {
+export interface EditWorkflowFormProps {
   workflow: EmailWorkflow
+  availableTemplates: EmailTemplate[]
   availableLists: EmailList[]
-  availableTemplates?: EmailTemplate[] // Made optional to fix TypeScript error
 }
 
-export default function EditWorkflowForm({ 
-  workflow, 
-  availableLists, 
-  availableTemplates = [] 
-}: EditWorkflowFormProps) {
+export default function EditWorkflowForm({ workflow, availableTemplates, availableLists }: EditWorkflowFormProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
   const [formData, setFormData] = useState({
     name: workflow.metadata.name,
     description: workflow.metadata.description || '',
@@ -34,40 +28,59 @@ export default function EditWorkflowForm({
     trigger_lists: workflow.metadata.trigger_lists || [],
     trigger_tags: workflow.metadata.trigger_tags || [],
     trigger_date: workflow.metadata.trigger_date || '',
-    steps: workflow.metadata.steps.map(step => ({
+    status: workflow.metadata.status.value as 'Draft' | 'Active' | 'Paused' | 'Completed',
+  })
+  const [steps, setSteps] = useState<CreateWorkflowStepData[]>([])
+  const [newTag, setNewTag] = useState('')
+
+  // Initialize steps from workflow data
+  useEffect(() => {
+    const initialSteps: CreateWorkflowStepData[] = workflow.metadata.steps.map(step => ({
       template_id: step.template_id,
       delay_days: step.delay_days,
       delay_hours: step.delay_hours,
       delay_minutes: step.delay_minutes,
       active: step.active,
-    })) as CreateWorkflowStepData[],
-  })
+    }))
+    setSteps(initialSteps)
+  }, [workflow])
 
-  const [newTag, setNewTag] = useState('')
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     
-    // Clear related errors
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[field]
-        return newErrors
+    if (steps.length === 0) {
+      alert('Please add at least one step to your workflow')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      const response = await fetch(`/api/workflows/${workflow.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          steps,
+        }),
       })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update workflow')
+      }
+
+      router.push(`/workflows/${workflow.id}`)
+    } catch (error) {
+      console.error('Error updating workflow:', error)
+      alert(error instanceof Error ? error.message : 'Failed to update workflow')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const addTag = () => {
-    if (newTag.trim() && !formData.trigger_tags.includes(newTag.trim())) {
-      handleInputChange('trigger_tags', [...formData.trigger_tags, newTag.trim()])
-      setNewTag('')
-    }
-  }
-
-  const removeTag = (tagToRemove: string) => {
-    handleInputChange('trigger_tags', formData.trigger_tags.filter(tag => tag !== tagToRemove))
+  const handleInputChange = (field: string, value: string | string[]) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
   }
 
   const addStep = () => {
@@ -78,100 +91,55 @@ export default function EditWorkflowForm({
       delay_minutes: 0,
       active: true,
     }
-    handleInputChange('steps', [...formData.steps, newStep])
+    setSteps(prev => [...prev, newStep])
   }
 
-  const updateStep = (index: number, field: keyof CreateWorkflowStepData, value: any) => {
-    const updatedSteps = [...formData.steps]
-    updatedSteps[index] = { ...updatedSteps[index], [field]: value }
-    handleInputChange('steps', updatedSteps)
+  const updateStep = (index: number, field: keyof CreateWorkflowStepData, value: string | number | boolean) => {
+    setSteps(prev => prev.map((step, i) => 
+      i === index ? { ...step, [field]: value } : step
+    ))
   }
 
   const removeStep = (index: number) => {
-    handleInputChange('steps', formData.steps.filter((_, i) => i !== index))
+    setSteps(prev => prev.filter((_, i) => i !== index))
   }
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!formData.name.trim()) {
-      newErrors.name = 'Workflow name is required'
-    }
-
-    if (formData.trigger_type === 'List Subscribe' && formData.trigger_lists.length === 0) {
-      newErrors.trigger_lists = 'At least one list must be selected for List Subscribe trigger'
-    }
-
-    if (formData.trigger_type === 'Tag Added' && formData.trigger_tags.length === 0) {
-      newErrors.trigger_tags = 'At least one tag must be specified for Tag Added trigger'
-    }
-
-    if (formData.trigger_type === 'Date Based' && !formData.trigger_date) {
-      newErrors.trigger_date = 'Trigger date is required for Date Based trigger'
-    }
-
-    if (formData.steps.length === 0) {
-      newErrors.steps = 'At least one email step is required'
-    }
-
-    formData.steps.forEach((step, index) => {
-      if (!step.template_id) {
-        newErrors[`step_${index}_template`] = 'Email template is required'
-      }
-    })
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!validateForm()) {
-      return
-    }
-
-    setIsSubmitting(true)
-
-    try {
-      const response = await fetch(`/api/workflows/${workflow.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to update workflow')
-      }
-
-      router.push(`/workflows/${workflow.id}`)
-      router.refresh()
-    } catch (error) {
-      console.error('Error updating workflow:', error)
-      setErrors({
-        submit: error instanceof Error ? error.message : 'Failed to update workflow'
-      })
-    } finally {
-      setIsSubmitting(false)
+  const addTag = () => {
+    if (newTag.trim() && !formData.trigger_tags.includes(newTag.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        trigger_tags: [...prev.trigger_tags, newTag.trim()]
+      }))
+      setNewTag('')
     }
   }
 
-  const formatDelay = (step: CreateWorkflowStepData) => {
-    const parts = []
-    if (step.delay_days > 0) parts.push(`${step.delay_days}d`)
-    if (step.delay_hours > 0) parts.push(`${step.delay_hours}h`)
-    if (step.delay_minutes > 0) parts.push(`${step.delay_minutes}m`)
-    return parts.length > 0 ? parts.join(' ') : 'Immediate'
+  const removeTag = (tagToRemove: string) => {
+    setFormData(prev => ({
+      ...prev,
+      trigger_tags: prev.trigger_tags.filter(tag => tag !== tagToRemove)
+    }))
   }
+
+  const toggleList = (listId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      trigger_lists: prev.trigger_lists.includes(listId)
+        ? prev.trigger_lists.filter(id => id !== listId)
+        : [...prev.trigger_lists, listId]
+    }))
+  }
+
+  const isFormValid = formData.name.trim() && steps.length > 0 && steps.every(step => step.template_id)
+  const canEdit = formData.status === 'Draft' || formData.status === 'Paused'
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <form onSubmit={handleSubmit} className="space-y-8">
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Workflow Information</CardTitle>
+            <CardTitle>Workflow Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -180,12 +148,10 @@ export default function EditWorkflowForm({
                 id="name"
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="Welcome Series, Onboarding Flow, etc."
-                className={errors.name ? 'border-red-500' : ''}
+                placeholder="e.g., Welcome Series, Onboarding Flow"
+                required
+                disabled={isSubmitting || !canEdit}
               />
-              {errors.name && (
-                <p className="text-sm text-red-600">{errors.name}</p>
-              )}
             </div>
 
             <div className="space-y-2">
@@ -194,9 +160,29 @@ export default function EditWorkflowForm({
                 id="description"
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
-                placeholder="Describe what this workflow accomplishes..."
+                placeholder="Describe what this workflow does..."
                 rows={3}
+                disabled={isSubmitting || !canEdit}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select 
+                value={formData.status} 
+                onValueChange={(value) => handleInputChange('status', value)}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Draft">Draft</SelectItem>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Paused">Paused</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -204,194 +190,177 @@ export default function EditWorkflowForm({
         {/* Trigger Configuration */}
         <Card>
           <CardHeader>
-            <CardTitle>Workflow Trigger</CardTitle>
+            <CardTitle>Trigger Settings</CardTitle>
+            <p className="text-sm text-gray-600">
+              Define when and how contacts enter this workflow
+            </p>
+            {!canEdit && (
+              <p className="text-sm text-orange-600">
+                Trigger settings cannot be modified while the workflow is active
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Trigger Type *</Label>
-              <Select
-                value={formData.trigger_type}
+              <Label htmlFor="trigger_type">Trigger Type</Label>
+              <Select 
+                value={formData.trigger_type} 
                 onValueChange={(value) => handleInputChange('trigger_type', value)}
+                disabled={isSubmitting || !canEdit}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Manual">Manual (Start manually)</SelectItem>
-                  <SelectItem value="List Subscribe">List Subscribe (Auto-start when added to list)</SelectItem>
-                  <SelectItem value="Tag Added">Tag Added (Auto-start when tag is added)</SelectItem>
-                  <SelectItem value="Date Based">Date Based (Start on specific date)</SelectItem>
+                  <SelectItem value="Manual">Manual - Add contacts manually</SelectItem>
+                  <SelectItem value="List Subscribe">List Subscribe - When added to selected lists</SelectItem>
+                  <SelectItem value="Tag Added">Tag Added - When tagged with specific tags</SelectItem>
+                  <SelectItem value="Date Based">Date Based - Start on a specific date</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* List-based triggers */}
             {formData.trigger_type === 'List Subscribe' && (
               <div className="space-y-2">
-                <Label>Trigger Lists *</Label>
+                <Label>Trigger Lists</Label>
                 <div className="space-y-2">
-                  {availableLists.map(list => (
-                    <div key={list.id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`list-${list.id}`}
-                        checked={formData.trigger_lists.includes(list.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            handleInputChange('trigger_lists', [...formData.trigger_lists, list.id])
-                          } else {
-                            handleInputChange('trigger_lists', formData.trigger_lists.filter(id => id !== list.id))
-                          }
-                        }}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor={`list-${list.id}`} className="text-sm">
-                        {list.metadata.name} ({list.metadata.total_contacts || 0} contacts)
-                      </Label>
-                    </div>
-                  ))}
+                  {availableLists.length === 0 ? (
+                    <p className="text-sm text-gray-500">No lists available</p>
+                  ) : (
+                    availableLists.map(list => (
+                      <div key={list.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={`list-${list.id}`}
+                          checked={formData.trigger_lists.includes(list.id)}
+                          onChange={() => toggleList(list.id)}
+                          disabled={isSubmitting || !canEdit}
+                          className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                        />
+                        <label htmlFor={`list-${list.id}`} className="text-sm">
+                          {list.metadata.name} ({list.metadata.total_contacts || 0} contacts)
+                        </label>
+                      </div>
+                    ))
+                  )}
                 </div>
-                {errors.trigger_lists && (
-                  <p className="text-sm text-red-600">{errors.trigger_lists}</p>
-                )}
               </div>
             )}
 
+            {/* Tag-based triggers */}
             {formData.trigger_type === 'Tag Added' && (
               <div className="space-y-2">
-                <Label>Trigger Tags *</Label>
-                <div className="flex gap-2 mb-2">
-                  <Input
-                    value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
-                    placeholder="Add tag..."
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                  />
-                  <Button type="button" onClick={addTag} variant="outline" size="sm">
-                    Add
-                  </Button>
-                </div>
+                <Label htmlFor="trigger_tags">Trigger Tags</Label>
+                {canEdit && (
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      placeholder="Enter a tag name"
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                      disabled={isSubmitting}
+                    />
+                    <Button type="button" onClick={addTag} disabled={!newTag.trim() || isSubmitting}>
+                      Add
+                    </Button>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {formData.trigger_tags.map(tag => (
                     <Badge key={tag} variant="secondary" className="flex items-center gap-1">
                       {tag}
-                      <button
-                        type="button"
-                        onClick={() => removeTag(tag)}
-                        className="ml-1 text-red-500 hover:text-red-700"
-                      >
-                        ×
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          disabled={isSubmitting}
+                          className="ml-1 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </Badge>
                   ))}
                 </div>
-                {errors.trigger_tags && (
-                  <p className="text-sm text-red-600">{errors.trigger_tags}</p>
-                )}
               </div>
             )}
 
+            {/* Date-based triggers */}
             {formData.trigger_type === 'Date Based' && (
               <div className="space-y-2">
-                <Label htmlFor="trigger_date">Trigger Date *</Label>
+                <Label htmlFor="trigger_date">Start Date</Label>
                 <Input
                   id="trigger_date"
                   type="date"
                   value={formData.trigger_date}
                   onChange={(e) => handleInputChange('trigger_date', e.target.value)}
-                  className={errors.trigger_date ? 'border-red-500' : ''}
+                  disabled={isSubmitting || !canEdit}
                 />
-                {errors.trigger_date && (
-                  <p className="text-sm text-red-600">{errors.trigger_date}</p>
-                )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Email Steps */}
+        {/* Workflow Steps */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              Email Steps
-              <Button type="button" onClick={addStep} variant="outline" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Step
-              </Button>
+              Workflow Steps
+              {canEdit && (
+                <Button type="button" onClick={addStep} disabled={isSubmitting}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Step
+                </Button>
+              )}
             </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {availableTemplates.length === 0 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-yellow-800">No Email Templates Available</h4>
-                    <p className="text-sm text-yellow-700 mt-1">
-                      You need to create email templates before you can add them to workflows. 
-                      Existing steps will show template IDs, but you won't be able to add new steps until templates are created.
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <p className="text-sm text-gray-600">
+              Define the sequence of emails in your workflow
+            </p>
+            {!canEdit && (
+              <p className="text-sm text-orange-600">
+                Workflow steps cannot be modified while the workflow is active
+              </p>
             )}
-
-            {formData.steps.length === 0 ? (
+          </CardHeader>
+          <CardContent>
+            {steps.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Mail className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p>No email steps added yet</p>
-                <p className="text-sm">Click "Add Step" to create your first email in the workflow</p>
+                <p>No steps added yet</p>
+                <p className="text-sm">Click "Add Step" to create your first email step</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {formData.steps.map((step, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                {steps.map((step, index) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium">
-                          {index + 1}
-                        </div>
-                        <span className="font-medium">Email Step {index + 1}</span>
-                        {formatDelay(step) !== 'Immediate' && (
-                          <Badge variant="outline" className="ml-2">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {formatDelay(step)} delay
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={step.active}
-                          onCheckedChange={(checked) => updateStep(index, 'active', checked)}
-                        />
-                        <Label className="text-sm">Active</Label>
+                      <h4 className="font-medium">Step {index + 1}</h4>
+                      {canEdit && (
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
                           onClick={() => removeStep(index)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          disabled={isSubmitting}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <X className="w-4 h-4" />
                         </Button>
-                      </div>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
                       <div className="space-y-2">
                         <Label>Email Template *</Label>
                         <Select
                           value={step.template_id}
                           onValueChange={(value) => updateStep(index, 'template_id', value)}
+                          disabled={isSubmitting || !canEdit}
                         >
-                          <SelectTrigger className={errors[`step_${index}_template`] ? 'border-red-500' : ''}>
-                            <SelectValue placeholder={availableTemplates.length === 0 ? "No templates available" : "Select template..."} />
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a template" />
                           </SelectTrigger>
                           <SelectContent>
-                            {step.template_id && availableTemplates.find(t => t.id === step.template_id) === undefined && (
-                              <SelectItem value={step.template_id} disabled>
-                                Unknown Template ({step.template_id})
-                              </SelectItem>
-                            )}
                             {availableTemplates.map(template => (
                               <SelectItem key={template.id} value={template.id}>
                                 {template.metadata.name}
@@ -399,92 +368,84 @@ export default function EditWorkflowForm({
                             ))}
                           </SelectContent>
                         </Select>
-                        {errors[`step_${index}_template`] && (
-                          <p className="text-sm text-red-600">{errors[`step_${index}_template`]}</p>
-                        )}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>Delay Before Sending</Label>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              placeholder="Days"
-                              value={step.delay_days}
-                              onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="23"
-                              placeholder="Hours"
-                              value={step.delay_hours}
-                              onChange={(e) => updateStep(index, 'delay_hours', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              max="59"
-                              placeholder="Minutes"
-                              value={step.delay_minutes}
-                              onChange={(e) => updateStep(index, 'delay_minutes', parseInt(e.target.value) || 0)}
-                            />
-                          </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label>Delay Days</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={step.delay_days}
+                            onChange={(e) => updateStep(index, 'delay_days', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting || !canEdit}
+                          />
                         </div>
+                        <div className="space-y-2">
+                          <Label>Delay Hours</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={step.delay_hours}
+                            onChange={(e) => updateStep(index, 'delay_hours', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting || !canEdit}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Delay Minutes</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={step.delay_minutes}
+                            onChange={(e) => updateStep(index, 'delay_minutes', parseInt(e.target.value) || 0)}
+                            disabled={isSubmitting || !canEdit}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Clock className="w-4 h-4 mr-2" />
+                        {step.delay_days > 0 && `${step.delay_days} day${step.delay_days > 1 ? 's' : ''} `}
+                        {step.delay_hours > 0 && `${step.delay_hours} hour${step.delay_hours > 1 ? 's' : ''} `}
+                        {step.delay_minutes > 0 && `${step.delay_minutes} minute${step.delay_minutes > 1 ? 's' : ''} `}
+                        {step.delay_days === 0 && step.delay_hours === 0 && step.delay_minutes === 0 && 'Send immediately'}
+                        after {index === 0 ? 'enrollment' : 'previous step'}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
-            {errors.steps && (
-              <p className="text-sm text-red-600">{errors.steps}</p>
-            )}
           </CardContent>
         </Card>
 
-        {/* Submit Section */}
-        <Card>
-          <CardContent className="pt-6">
-            {errors.submit && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
-                {errors.submit}
-              </div>
+        {/* Submit Actions */}
+        <div className="flex justify-end space-x-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.back()}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={isSubmitting || !isFormValid}
+            className="min-w-[140px]"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Updating...
+              </>
+            ) : (
+              'Update Workflow'
             )}
-            
-            <div className="flex justify-end space-x-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push(`/workflows/${workflow.id}`)}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="min-w-[120px]"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  'Update Workflow'
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          </Button>
+        </div>
       </form>
     </div>
   )
