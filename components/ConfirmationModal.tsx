@@ -1,158 +1,77 @@
 'use client'
 
-import { useState, ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { Loader2, AlertTriangle } from 'lucide-react'
 
 export interface ConfirmationModalProps {
   isOpen: boolean
-  onOpenChange: (open: boolean) => void
-  title: string
-  message?: string
-  description?: string
-  confirmText?: string
-  cancelText?: string
-  variant?: 'default' | 'destructive'
+  onClose: () => void
   onConfirm: () => void | Promise<void>
+  title: string
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
   isLoading?: boolean
-  preventAutoClose?: boolean
-  trigger?: ReactNode
+  variant?: 'default' | 'destructive'
 }
 
 export default function ConfirmationModal({
   isOpen,
-  onOpenChange,
+  onClose,
+  onConfirm,
   title,
   message,
-  description,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
-  variant = 'default',
-  onConfirm,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
   isLoading = false,
-  preventAutoClose = false,
-  trigger
+  variant = 'default'
 }: ConfirmationModalProps) {
-  const [isConfirming, setIsConfirming] = useState(false)
-
   const handleConfirm = async () => {
-    if (isConfirming || isLoading) return
-    
-    setIsConfirming(true)
     try {
       await onConfirm()
-      if (!preventAutoClose) {
-        onOpenChange(false)
-      }
     } catch (error) {
       console.error('Error in confirmation action:', error)
-    } finally {
-      setIsConfirming(false)
     }
-  }
-
-  const handleCancel = () => {
-    if (!isConfirming && !isLoading) {
-      onOpenChange(false)
-    }
-  }
-
-  const displayMessage = message || description
-  const loading = isConfirming || isLoading
-
-  if (trigger) {
-    return (
-      <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        {trigger}
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {variant === 'destructive' && (
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-              )}
-              {title}
-            </DialogTitle>
-          </DialogHeader>
-          
-          {displayMessage && (
-            <div className="py-4">
-              <p className="text-sm text-gray-600">
-                {displayMessage}
-              </p>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCancel}
-              disabled={loading}
-            >
-              {cancelText}
-            </Button>
-            <Button
-              variant={variant}
-              onClick={handleConfirm}
-              disabled={loading}
-              className="min-w-[100px]"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {variant === 'destructive' ? 'Deleting...' : 'Loading...'}
-                </>
-              ) : (
-                confirmText
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    )
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {variant === 'destructive' && (
-              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <AlertTriangle className="w-5 h-5 text-red-500" />
             )}
             {title}
           </DialogTitle>
         </DialogHeader>
         
-        {displayMessage && (
-          <div className="py-4">
-            <p className="text-sm text-gray-600">
-              {displayMessage}
-            </p>
-          </div>
-        )}
+        <div className="py-4">
+          <p className="text-gray-600">{message}</p>
+        </div>
 
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={handleCancel}
-            disabled={loading}
+            onClick={onClose}
+            disabled={isLoading}
           >
-            {cancelText}
+            {cancelLabel}
           </Button>
           <Button
-            variant={variant}
+            variant={variant === 'destructive' ? 'destructive' : 'default'}
             onClick={handleConfirm}
-            disabled={loading}
-            className="min-w-[100px]"
+            disabled={isLoading}
+            className="min-w-[80px]"
           >
-            {loading ? (
+            {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {variant === 'destructive' ? 'Deleting...' : 'Loading...'}
+                Loading...
               </>
             ) : (
-              confirmText
+              confirmLabel
             )}
           </Button>
         </DialogFooter>

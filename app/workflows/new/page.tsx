@@ -1,38 +1,44 @@
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
-import CreateWorkflowForm from '@/components/CreateWorkflowForm'
 import { getEmailTemplates, getEmailLists } from '@/lib/cosmic'
+import CreateWorkflowForm from '@/components/CreateWorkflowForm'
+import { EmailTemplate, EmailList } from '@/types'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function NewWorkflowPage() {
-  let templates = []
-  let lists = []
+  // Fetch templates and lists with proper typing
+  let templates: EmailTemplate[] = []
+  let lists: EmailList[] = []
 
   try {
     templates = await getEmailTemplates()
     lists = await getEmailLists()
   } catch (error) {
-    console.error('Error fetching data:', error)
+    console.error('Error fetching templates or lists:', error)
+    // Continue with empty arrays - components will handle gracefully
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <Link href="/workflows">
-          <Button variant="outline" className="mb-4">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Workflows
-          </Button>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Create New Workflow</h1>
-        <p className="text-gray-600 mt-2">
-          Set up automated email sequences to nurture your contacts
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="py-6">
+            <h1 className="text-3xl font-bold text-gray-900">
+              Create New Workflow
+            </h1>
+            <p className="text-gray-600 mt-1">
+              Set up an automated email sequence
+            </p>
+          </div>
+        </div>
+      </header>
 
-      <CreateWorkflowForm templates={templates} lists={lists} />
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <CreateWorkflowForm 
+          availableTemplates={templates} 
+          availableLists={lists} 
+        />
+      </main>
     </div>
   )
 }
