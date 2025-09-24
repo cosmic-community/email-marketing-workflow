@@ -46,8 +46,10 @@ export default function ContactEnrollmentModal({
   }, [isOpen])
 
   useEffect(() => {
-    fetchContacts()
-  }, [searchTerm, currentPage])
+    if (isOpen) {
+      fetchContacts()
+    }
+  }, [searchTerm, currentPage, isOpen])
 
   // Update select all checkbox state
   useEffect(() => {
@@ -80,16 +82,31 @@ export default function ContactEnrollmentModal({
         params.set('search', searchTerm.trim())
       }
 
+      console.log('Fetching contacts with params:', params.toString())
       const response = await fetch(`/api/contacts?${params}`)
-      if (!response.ok) throw new Error('Failed to fetch contacts')
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
 
       const result = await response.json()
-      setContacts(result.data.contacts || [])
-      setTotal(result.data.total || 0)
-      setHasNextPage(result.data.contacts?.length === itemsPerPage)
+      console.log('Contacts API response:', result)
+      
+      // Handle the response structure properly
+      const contactsData = result.data || result
+      const contactsList = contactsData.contacts || contactsData || []
+      const totalCount = contactsData.total || contactsList.length
+
+      setContacts(contactsList)
+      setTotal(totalCount)
+      setHasNextPage(contactsList.length === itemsPerPage)
+      
+      console.log(`Loaded ${contactsList.length} contacts out of ${totalCount} total`)
     } catch (error) {
       console.error('Error fetching contacts:', error)
       setContacts([])
+      setTotal(0)
+      setHasNextPage(false)
     } finally {
       setLoading(false)
     }
@@ -232,6 +249,11 @@ export default function ContactEnrollmentModal({
                 <p className="text-gray-600 mt-2">
                   {searchTerm ? 'No contacts found matching your search.' : 'No active contacts found.'}
                 </p>
+                {!searchTerm && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Create some contacts first to enroll them in workflows.
+                  </p>
+                )}
               </div>
             ) : (
               contacts.map(contact => (
@@ -266,8 +288,8 @@ export default function ContactEnrollmentModal({
                     </p>
                     {contact.metadata.tags && contact.metadata.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {contact.metadata.tags.slice(0, 3).map(tag => (
-                          <span key={tag} className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                        {contact.metadata.tags.slice(0, 3).map((tag, index) => (
+                          <span key={index} className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
                             {tag}
                           </span>
                         ))}
