@@ -2,7 +2,19 @@
   "crons": [
     {
       "path": "/api/cron/send-campaigns",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/process-workflows",
       "schedule": "*/2 * * * *"
     }
-  ]
+  ],
+  "functions": {
+    "app/api/cron/send-campaigns/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/process-workflows/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }
